@@ -436,9 +436,9 @@ const ROLES = [
 // STATE
 // ═══════════════════════════════════════
 let STATE = {
-  webAppUrl: '',
+  webAppUrl: 'https://script.google.com/macros/s/AKfycbx8LeyT43ws-qRpddhlvTYTJGtO1vW7KHr_ysqfy-ABl-sMgraGn6Cd7OXf0qoH2feycw/exec',
   reports: [],
-  photos: [] // {file, dataUrl}
+  photos: []
 };
 
 let zoneCount = 0;
@@ -523,13 +523,15 @@ function deleteSite(idx) {
 
   // Build manpower grid
   buildMpGrid();
-  // Load saved connection
+  // Load saved connection — auto-connect with hardcoded URL
+  document.getElementById('webAppUrl').value = STATE.webAppUrl;
   try {
     const saved = JSON.parse(localStorage.getItem('jx_conn') || '{}');
-    if (saved.webAppUrl) { document.getElementById('webAppUrl').value = saved.webAppUrl; STATE.webAppUrl = saved.webAppUrl; }
+    if (saved.webAppUrl) STATE.webAppUrl = saved.webAppUrl;
     const savedName = localStorage.getItem('jx_engineer');
     if (savedName) document.getElementById('rptEngineer').value = savedName;
   } catch(e) {}
+  connStat('✓ Auto-connected to Sheet', 'ok');
   // Load local reports
   try { STATE.reports = JSON.parse(localStorage.getItem('jx_reports') || '[]'); } catch(e) { STATE.reports = []; }
   renderHistory();
