@@ -216,7 +216,7 @@ body { background:var(--bg); font-family:'DM Sans','Noto Sans SC',sans-serif; co
 
       <!-- Quick Paste -->
       <div class="form-group" style="margin-bottom:14px;">
-        <label>Quick Paste (安全管报告)</label>
+        <label>Quick Paste (Safety Report)</label>
         <textarea id="quickPaste" rows="3" placeholder="Paste the safety officer's manpower text here and click Parse..."></textarea>
         <button class="btn" onclick="parsePaste()" style="margin-top:6px;align-self:flex-start;">⚡ Auto Parse</button>
       </div>
@@ -230,8 +230,8 @@ body { background:var(--bg); font-family:'DM Sans','Noto Sans SC',sans-serif; co
 
     <!-- Work Zones -->
     <div class="card">
-      <div class="card-title"><div class="icon" style="background:var(--purple-bg);color:var(--purple)">📍</div> Work Zones — 施工区域</div>
-      <p style="font-size:0.75rem;color:var(--ink3);margin-bottom:12px;">每个区域记录工种人数+施工量+完成状态。先添加Level和Location，再创建Zone。</p>
+      <div class="card-title"><div class="icon" style="background:var(--purple-bg);color:var(--purple)">📍</div> Work Zones</div>
+      <p style="font-size:0.75rem;color:var(--ink3);margin-bottom:12px;">Record trade headcount + quantities per zone. Add Levels and Locations first, then create Zones.</p>
 
       <!-- Level & Location Management -->
       <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;padding:14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;">
@@ -261,9 +261,9 @@ body { background:var(--bg); font-family:'DM Sans','Noto Sans SC',sans-serif; co
       <!-- Existing Zone Selector -->
       <div class="form-row" style="grid-template-columns:1fr auto auto; margin-bottom:14px; align-items:end;">
         <div class="form-group">
-          <label>选择已有区域 / Select Existing Zone</label>
+          <label>Select Existing Zone</label>
           <select id="zoneSelect">
-            <option value="">— 创建新区域 Create New —</option>
+            <option value="">— Create New Zone —</option>
           </select>
         </div>
         <button class="btn" onclick="addZoneFromSelect()" style="height:37px;">+ Add to Today</button>
@@ -284,10 +284,10 @@ body { background:var(--bg); font-family:'DM Sans','Noto Sans SC',sans-serif; co
     <div id="zoneModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:100;align-items:center;justify-content:center;">
       <div style="background:var(--surface);border-radius:12px;padding:24px;max-width:500px;width:90%;max-height:70vh;overflow-y:auto;box-shadow:var(--shadow-lg);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-          <h3 style="font-size:0.95rem;font-weight:600;">⚙ Manage Zones — 区域管理</h3>
+          <h3 style="font-size:0.95rem;font-weight:600;">⚙ Manage Zones</h3>
           <button onclick="document.getElementById('zoneModal').style.display='none'" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--ink3);">✕</button>
         </div>
-        <p style="font-size:0.75rem;color:var(--ink3);margin-bottom:12px;">标记完成的区域会变灰色，但仍然可选择查看历史数据。</p>
+        <p style="font-size:0.75rem;color:var(--ink3);margin-bottom:12px;">Completed zones are greyed out but still accessible for history.</p>
         <div id="zoneManagerList"></div>
         <div style="margin-top:14px;display:flex;gap:8px;">
           <input type="text" id="newZoneName" placeholder="New zone name, e.g. B1 Column Grid A-D" style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem;font-family:inherit;">
@@ -312,17 +312,17 @@ body { background:var(--bg); font-family:'DM Sans','Noto Sans SC',sans-serif; co
       <div class="card-title"><div class="icon" style="background:var(--red-bg);color:var(--red)">📝</div> Notes & Issues</div>
       <div class="form-row" style="grid-template-columns:1fr;">
         <div class="form-group">
-          <label>Today's Work Summary — 今日施工总结</label>
+          <label>Today's Work Summary</label>
           <textarea id="rptSummary" rows="3" placeholder="Describe main work activities..."></textarea>
         </div>
       </div>
       <div class="form-row" style="grid-template-columns:1fr 1fr;">
         <div class="form-group">
-          <label>Issues / Delays — 问题/延误</label>
+          <label>Issues / Delays</label>
           <textarea id="rptIssues" rows="2" placeholder="Any issues or delays..."></textarea>
         </div>
         <div class="form-group">
-          <label>Tomorrow's Plan — 明日计划</label>
+          <label>Tomorrow's Plan</label>
           <textarea id="rptPlan" rows="2" placeholder="Planned activities for tomorrow..."></textarea>
         </div>
       </div>
@@ -408,8 +408,8 @@ body { background:var(--bg); font-family:'DM Sans','Noto Sans SC',sans-serif; co
     <!-- Location Summary -->
     <div id="subTab-loc" style="display:none;">
       <div class="card">
-        <div class="card-title"><div class="icon" style="background:var(--purple-bg);color:var(--purple)">📍</div> Location Summary — 区域进度总览</div>
-        <p style="font-size:0.75rem;color:var(--ink3);margin-bottom:14px;">所有区域按创建时间从旧到新排列。点击展开查看工作天数明细。</p>
+        <div class="card-title"><div class="icon" style="background:var(--purple-bg);color:var(--purple)">📍</div> Location Summary</div>
+        <p style="font-size:0.75rem;color:var(--ink3);margin-bottom:14px;">All zones sorted oldest to newest. Click to expand and see daily breakdown.</p>
         <div id="locationSummaryList"></div>
       </div>
     </div>
@@ -441,6 +441,7 @@ let STATE = {
 };
 
 let zoneCount = 0;
+let filteredReportsCache = [];
 
 // ═══════════════════════════════════════
 // EARLY DECLARATIONS (must be before init)
@@ -658,7 +659,7 @@ function saveZonesToStorage() {
 
 function refreshZoneDropdown() {
   const sel = document.getElementById('zoneSelect');
-  sel.innerHTML = '<option value="">— 创建新区域 Create New —</option>';
+  sel.innerHTML = '<option value="">— Create New Zone —</option>';
   savedZones.forEach((z,i) => {
     const status = z.completed ? ' ✅' : '';
     const style = z.completed ? 'color:var(--ink3);' : '';
@@ -766,22 +767,22 @@ function addZoneCard(zoneName, savedIdx) {
     <!-- Row 2: Type + Activity -->
     <div class="form-row" style="grid-template-columns:auto 1fr auto;">
       <div class="form-group">
-        <label>Type / 类型</label>
+        <label>Type</label>
         <select class="zone-type" onchange="handleTypeChange(this)" style="min-width:120px;">
-          <option value="Slab">Slab 楼板</option>
-          <option value="Wall">Wall 墙</option>
-          <option value="Beam">Beam 梁</option>
-          <option value="Column">Column 柱</option>
-          <option value="Staircase">Staircase 楼梯</option>
-          <option value="Others">Others 其他</option>
+          <option value="Slab">Slab</option>
+          <option value="Wall">Wall</option>
+          <option value="Beam">Beam</option>
+          <option value="Column">Column</option>
+          <option value="Staircase">Staircase</option>
+          <option value="Others">Others</option>
         </select>
       </div>
       <div class="form-group zone-type-other-group" style="display:none;">
-        <label>Other Type / 其他类型</label>
+        <label>Other Type</label>
         <input type="text" class="zone-type-other" placeholder="Specify type...">
       </div>
       <div class="form-group" style="flex:1;">
-        <label>Activity / 施工内容</label>
+        <label>Activity</label>
         <select class="zone-activity-select" onchange="handleActivityChange(this)">
           ${getActivityOptions()}
         </select>
@@ -795,20 +796,20 @@ function addZoneCard(zoneName, savedIdx) {
     <!-- Workers -->
     <div style="font-size:0.72rem;font-weight:600;color:var(--ink2);margin:10px 0 6px;text-transform:uppercase;letter-spacing:0.04em;">👷 Workers per Trade</div>
     <div class="form-row" style="grid-template-columns:repeat(5,1fr);">
-      <div class="form-group"><label>铁工 Rebar</label><input type="number" class="zone-rebar" min="0" value="0" onchange="updateZoneTotals()"></div>
-      <div class="form-group"><label>木工 Formwork</label><input type="number" class="zone-fw" min="0" value="0" onchange="updateZoneTotals()"></div>
-      <div class="form-group"><label>洋灰工 Concrete</label><input type="number" class="zone-conc" min="0" value="0" onchange="updateZoneTotals()"></div>
-      <div class="form-group"><label>架工 Scaffold</label><input type="number" class="zone-scaffold" min="0" value="0" onchange="updateZoneTotals()"></div>
-      <div class="form-group"><label>其他 Others</label><input type="number" class="zone-other" min="0" value="0" onchange="updateZoneTotals()"></div>
+      <div class="form-group"><label>Rebar</label><input type="number" class="zone-rebar" min="0" value="0" onchange="updateZoneTotals()"></div>
+      <div class="form-group"><label>Formwork</label><input type="number" class="zone-fw" min="0" value="0" onchange="updateZoneTotals()"></div>
+      <div class="form-group"><label>Concrete</label><input type="number" class="zone-conc" min="0" value="0" onchange="updateZoneTotals()"></div>
+      <div class="form-group"><label>Scaffold</label><input type="number" class="zone-scaffold" min="0" value="0" onchange="updateZoneTotals()"></div>
+      <div class="form-group"><label>Others</label><input type="number" class="zone-other" min="0" value="0" onchange="updateZoneTotals()"></div>
     </div>
 
     <!-- Quantities -->
     <div style="font-size:0.72rem;font-weight:600;color:var(--ink2);margin:10px 0 6px;text-transform:uppercase;letter-spacing:0.04em;">📐 Quantities</div>
     <div class="form-row" style="grid-template-columns:repeat(4,1fr);">
-      <div class="form-group"><label>钢筋 Rebar (T)</label><input type="number" class="zone-qty-rebar" min="0" step="0.01" value="0" onchange="updateZoneTotals()"></div>
-      <div class="form-group"><label>模板 Formwork (㎡)</label><input type="number" class="zone-qty-fw" min="0" step="0.1" value="0" onchange="updateZoneTotals()"></div>
-      <div class="form-group"><label>混凝土 Concrete (m³)</label><input type="number" class="zone-qty-conc" min="0" step="0.1" value="0" onchange="updateZoneTotals()"></div>
-      <div class="form-group"><label>架子 Scaffold (m³)</label><input type="number" class="zone-qty-scaffold" min="0" step="0.1" value="0" onchange="updateZoneTotals()"></div>
+      <div class="form-group"><label>Rebar (T)</label><input type="number" class="zone-qty-rebar" min="0" step="0.01" value="0" onchange="updateZoneTotals()"></div>
+      <div class="form-group"><label>Formwork (m2)</label><input type="number" class="zone-qty-fw" min="0" step="0.1" value="0" onchange="updateZoneTotals()"></div>
+      <div class="form-group"><label>Concrete (m³)</label><input type="number" class="zone-qty-conc" min="0" step="0.1" value="0" onchange="updateZoneTotals()"></div>
+      <div class="form-group"><label>Scaffold (m³)</label><input type="number" class="zone-qty-scaffold" min="0" step="0.1" value="0" onchange="updateZoneTotals()"></div>
     </div>
 
     <!-- Progress -->
@@ -818,7 +819,7 @@ function addZoneCard(zoneName, savedIdx) {
         <input type="number" class="zone-progress" min="0" max="100" value="0" step="5" onchange="updateZoneTotals()" style="text-align:center;">
       </div>
       <div class="form-group">
-        <label>Zone Notes / 备注</label>
+        <label>Zone Notes</label>
         <input type="text" class="zone-notes" placeholder="Progress notes, planned activities, issues...">
       </div>
     </div>
@@ -1009,7 +1010,7 @@ function updateZoneTotals() {
     <div class="stat-box"><div class="stat-val" style="color:var(--green);font-size:1.1rem;">${completed}/${total}</div><div class="stat-lbl">Completed</div></div>
     <div class="stat-box"><div class="stat-val" style="color:var(--accent2);font-size:1.1rem;">${totalWorkers}</div><div class="stat-lbl">Total Workers</div></div>
     <div class="stat-box"><div class="stat-val" style="color:var(--red);font-size:1.1rem;">${tRebar.toFixed(2)}</div><div class="stat-lbl">Rebar (T)</div></div>
-    <div class="stat-box"><div class="stat-val" style="color:var(--purple);font-size:1.1rem;">${tFW.toFixed(1)}</div><div class="stat-lbl">Formwork (㎡)</div></div>
+    <div class="stat-box"><div class="stat-val" style="color:var(--purple);font-size:1.1rem;">${tFW.toFixed(1)}</div><div class="stat-lbl">Formwork (m2)</div></div>
     <div class="stat-box"><div class="stat-val" style="color:var(--green);font-size:1.1rem;">${tConc.toFixed(1)}</div><div class="stat-lbl">Concrete (m³)</div></div>
     <div class="stat-box"><div class="stat-val" style="color:var(--accent2);font-size:1.1rem;">${tScaff.toFixed(1)}</div><div class="stat-lbl">Scaffold (m³)</div></div>
 
@@ -1364,21 +1365,58 @@ function showReportPreview(r) {
 function formatDate(d) {
   if (!d) return '—';
   try {
-    const parts = String(d).split('-');
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return d;
-  } catch(e) { return d; }
+    const s = String(d);
+    // Handle ISO format: 2026-03-11T16:00:00.000Z or similar
+    if (s.includes('T')) {
+      const dt = new Date(s);
+      if (!isNaN(dt)) {
+        const dd = String(dt.getDate()).padStart(2,'0');
+        const mm = String(dt.getMonth()+1).padStart(2,'0');
+        const yy = dt.getFullYear();
+        return `${dd}/${mm}/${yy}`;
+      }
+    }
+    // Handle yyyy-mm-dd
+    if (s.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const p = s.split('-');
+      return `${p[2]}/${p[1]}/${p[0]}`;
+    }
+    return s;
+  } catch(e) { return String(d); }
 }
+
+function getISODate(d) {
+  if (!d) return '';
+  const s = String(d);
+  if (s.includes('T')) {
+    const dt = new Date(s);
+    if (!isNaN(dt)) return dt.toISOString().slice(0,10);
+  }
+  if (s.match(/^\d{4}-\d{2}-\d{2}$/)) return s;
+  return s;
+}
+
+// filteredReportsCache declared above
 
 function renderHistory() {
   const siteFilter = document.getElementById('histSite').value;
   const monthFilter = document.getElementById('histMonth').value;
 
-  let filtered = STATE.reports;
+  let filtered = STATE.reports.slice();
   if (siteFilter && siteFilter !== 'All') filtered = filtered.filter(r => r.site === siteFilter);
-  if (monthFilter) filtered = filtered.filter(r => r.date && r.date.startsWith(monthFilter));
+  if (monthFilter) {
+    filtered = filtered.filter(r => {
+      const iso = getISODate(r.date);
+      return iso && iso.startsWith(monthFilter);
+    });
+  }
 
-  filtered.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+  filtered.sort((a,b) => {
+    const da = new Date(a.date||0), db = new Date(b.date||0);
+    return db - da;
+  });
+
+  filteredReportsCache = filtered;
 
   const el = document.getElementById('histList');
   if (filtered.length === 0) {
@@ -1391,31 +1429,28 @@ function renderHistory() {
     const safetyColor = r.safety==='Normal'?'var(--green)':r.safety==='Near Miss'?'var(--amber)':'var(--red)';
     const photoCount = r.photoCount || (r.photos||[]).length || 0;
 
-    // Manpower summary
-    const mpSummary = (r.manpower||[]).map((v,i) => {
-      if (v === 0) return '';
-      return `<span style="font-size:0.7rem;padding:1px 6px;border-radius:3px;background:var(--surface2);border:1px solid var(--border);">${(r.manpowerLabels||ROLES)[i]||ROLES[i]}: ${v}</span>`;
-    }).filter(Boolean).join(' ');
-
     return `<div style="border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;">
-      <div onclick="showReportPreview(STATE.reports[STATE.reports.indexOf(this.__rpt)||${STATE.reports.indexOf(r)}]);void(0)" 
+      <div onclick="viewFilteredReport(${idx})"
            style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;transition:background 0.2s;flex-wrap:wrap;"
-           onmouseover="this.style.background='rgba(217,119,6,0.03)'" onmouseout="this.style.background='transparent'"
-           onclick="showReportPreview(JSON.parse(this.dataset.rpt))" data-rpt='${JSON.stringify(r).replace(/'/g,"&#39;")}'>
+           onmouseover="this.style.background='rgba(217,119,6,0.03)'" onmouseout="this.style.background='transparent'">
         <span style="font-weight:600;font-size:0.85rem;min-width:80px;">${dateStr}</span>
-        <span style="font-size:0.78rem;padding:2px 8px;border-radius:4px;background:var(--accent-bg);color:var(--accent);">${r.site}</span>
+        <span style="font-size:0.78rem;padding:2px 8px;border-radius:4px;background:var(--accent-bg);color:var(--accent);">${r.site||''}</span>
         <span style="font-size:0.75rem;color:var(--ink3);">${r.shift||'Day'}</span>
         <span style="font-size:0.75rem;color:var(--ink3);">${r.weather||''}</span>
-        <span style="font-weight:600;font-size:0.82rem;">${r.totalMP} pax</span>
+        <span style="font-weight:600;font-size:0.82rem;">${r.totalMP||0} pax</span>
         <span style="font-size:0.72rem;color:var(--red);">R:${(r.rebar||0).toFixed(1)}T</span>
-        <span style="font-size:0.72rem;color:var(--purple);">F:${(r.formwork||0).toFixed(1)}㎡</span>
-        <span style="font-size:0.72rem;color:var(--green);">C:${(r.concrete||0).toFixed(1)}m³</span>
+        <span style="font-size:0.72rem;color:var(--purple);">F:${(r.formwork||0).toFixed(1)}m2</span>
+        <span style="font-size:0.72rem;color:var(--green);">C:${(r.concrete||0).toFixed(1)}m3</span>
         <span style="color:${safetyColor};font-size:0.75rem;font-weight:500;">${r.safety||'Normal'}</span>
         ${photoCount > 0 ? `<span style="font-size:0.72rem;color:var(--accent2);">📷${photoCount}</span>` : ''}
         <span style="font-size:0.72rem;color:var(--accent2);margin-left:auto;">▸ View</span>
       </div>
     </div>`;
   }).join('');
+}
+
+function viewFilteredReport(idx) {
+  if (filteredReportsCache[idx]) showReportPreview(filteredReportsCache[idx]);
 }
 
 // ═══════════════════════════════════════
@@ -1439,8 +1474,8 @@ function renderSummary() {
   document.getElementById('summaryStats').innerHTML = `
     <div class="stat-box"><div class="stat-val" style="color:var(--accent)">${days}</div><div class="stat-lbl">Report Days</div></div>
     <div class="stat-box"><div class="stat-val" style="color:var(--accent2)">${mMP.toLocaleString()}</div><div class="stat-lbl">Man-days</div></div>
-    <div class="stat-box"><div class="stat-val" style="color:var(--red)">${mRebar.toFixed(1)}</div><div class="stat-lbl">Rebar (吨)</div></div>
-    <div class="stat-box"><div class="stat-val" style="color:var(--purple)">${mFW.toFixed(1)}</div><div class="stat-lbl">Formwork (㎡)</div></div>
+    <div class="stat-box"><div class="stat-val" style="color:var(--red)">${mRebar.toFixed(1)}</div><div class="stat-lbl">Rebar (T)</div></div>
+    <div class="stat-box"><div class="stat-val" style="color:var(--purple)">${mFW.toFixed(1)}</div><div class="stat-lbl">Formwork (m2)</div></div>
     <div class="stat-box"><div class="stat-val" style="color:var(--green)">${mConc.toFixed(1)}</div><div class="stat-lbl">Concrete (m³)</div></div>
     <div class="stat-box"><div class="stat-val" style="color:${incidents>0?'var(--red)':'var(--green)'}">${incidents}</div><div class="stat-lbl">Safety Incidents</div></div>
   `;
@@ -1455,8 +1490,8 @@ function renderSummary() {
   document.getElementById('cumulativeStats').innerHTML = `
     <div class="stat-box"><div class="stat-val" style="color:var(--accent)">${tDays}</div><div class="stat-lbl">Total Days</div></div>
     <div class="stat-box"><div class="stat-val" style="color:var(--accent2)">${tMP.toLocaleString()}</div><div class="stat-lbl">Cumul. Man-days</div></div>
-    <div class="stat-box"><div class="stat-val" style="color:var(--red)">${tRebar.toFixed(1)}</div><div class="stat-lbl">Cumul. Rebar (吨)</div></div>
-    <div class="stat-box"><div class="stat-val" style="color:var(--purple)">${tFW.toFixed(1)}</div><div class="stat-lbl">Cumul. Formwork (㎡)</div></div>
+    <div class="stat-box"><div class="stat-val" style="color:var(--red)">${tRebar.toFixed(1)}</div><div class="stat-lbl">Cumul. Rebar (T)</div></div>
+    <div class="stat-box"><div class="stat-val" style="color:var(--purple)">${tFW.toFixed(1)}</div><div class="stat-lbl">Cumul. Formwork (m2)</div></div>
     <div class="stat-box"><div class="stat-val" style="color:var(--green)">${tConc.toFixed(1)}</div><div class="stat-lbl">Cumul. Concrete (m³)</div></div>
   `;
 }
