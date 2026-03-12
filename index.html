@@ -352,7 +352,7 @@ body { background:var(--bg); font-family:'DM Sans','Noto Sans SC',sans-serif; co
   <!-- ═══ TAB 2: HISTORY ═══ -->
   <div class="tab-panel" id="tab-history">
     <div class="card">
-      <div class="card-title"><div class="icon" style="background:var(--accent2-bg);color:var(--accent2)">📋</div> Report History</div>
+      <div class="card-title"><div class="icon" style="background:var(--accent2-bg);color:var(--accent2)">📋</div> Report History — click to expand</div>
       <div class="form-row" style="margin-bottom:14px;">
         <div class="form-group">
           <label>Filter Site</label>
@@ -363,16 +363,15 @@ body { background:var(--bg); font-family:'DM Sans','Noto Sans SC',sans-serif; co
           <input type="month" id="histMonth" onchange="renderHistory()">
         </div>
       </div>
-      <div style="overflow-x:auto;">
-        <table class="hist-table" id="histTable">
-          <thead><tr>
-            <th>Date</th><th>Site</th><th>Shift</th><th>Weather</th>
-            <th>Total MP</th><th>Rebar</th><th>Formwork</th><th>Concrete</th>
-            <th>Safety</th><th>Summary</th>
-          </tr></thead>
-          <tbody id="histBody"></tbody>
-        </table>
-      </div>
+      <div id="histList"></div>
+    </div>
+  </div>
+
+  <!-- ═══ REPORT PREVIEW MODAL ═══ -->
+  <div id="previewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;overflow-y:auto;padding:20px;">
+    <div style="max-width:700px;margin:20px auto;background:var(--surface);border-radius:12px;padding:24px;box-shadow:var(--shadow-lg);position:relative;">
+      <button onclick="document.getElementById('previewModal').style.display='none'" style="position:absolute;top:12px;right:16px;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--ink3);">✕</button>
+      <div id="previewContent"></div>
     </div>
   </div>
 
@@ -532,11 +531,16 @@ function deleteSite(idx) {
     if (savedName) document.getElementById('rptEngineer').value = savedName;
   } catch(e) {}
   connStat('✓ Auto-connected to Sheet', 'ok');
-  // Load local reports
+  // Load local reports first, then auto-pull from Sheet
   try { STATE.reports = JSON.parse(localStorage.getItem('jx_reports') || '[]'); } catch(e) { STATE.reports = []; }
   renderHistory();
   renderSummary();
   renderLocationSummary();
+
+  // Auto pull from Sheet after 1 second
+  if (STATE.webAppUrl) {
+    setTimeout(() => { pullFromSheet(); }, 1000);
+  }
 
   // Enter key for site input
   setTimeout(() => {
@@ -807,9 +811,16 @@ function addZoneCard(zoneName, savedIdx) {
       <div class="form-group"><label>架子 Scaffold (m³)</label><input type="number" class="zone-qty-scaffold" min="0" step="0.1" value="0" onchange="updateZoneTotals()"></div>
     </div>
 
-    <div class="form-group">
-      <label>Zone Notes / 备注</label>
-      <input type="text" class="zone-notes" placeholder="Progress notes, issues...">
+    <!-- Progress -->
+    <div class="form-row" style="grid-template-columns:120px 1fr;">
+      <div class="form-group">
+        <label>Progress %</label>
+        <input type="number" class="zone-progress" min="0" max="100" value="0" step="5" onchange="updateZoneTotals()" style="text-align:center;">
+      </div>
+      <div class="form-group">
+        <label>Zone Notes / 备注</label>
+        <input type="text" class="zone-notes" placeholder="Progress notes, planned activities, issues...">
+      </div>
     </div>
   `;
   container.appendChild(div);
@@ -1043,6 +1054,7 @@ function getZones() {
       qtyFormwork: parseFloat(z.querySelector('.zone-qty-fw')?.value) || 0,
       qtyConcrete: parseFloat(z.querySelector('.zone-qty-conc')?.value) || 0,
       qtyScaffold: parseFloat(z.querySelector('.zone-qty-scaffold')?.value) || 0,
+      progress: parseInt(z.querySelector('.zone-progress')?.value) || 0,
       notes: z.querySelector('.zone-notes')?.value || ''
     });
     if (name && !savedZones.find(sz => sz.name === name)) {
@@ -1210,38 +1222,41 @@ async function submitReport() {
   mp.forEach((v,i) => { if (i !== absentIdx) totalMP += v; });
 
   const zones = getZones();
-  // Calculate totals from zones
   const totalRebar = zones.reduce((s,z) => s + (z.qtyRebar||0), 0);
   const totalFormwork = zones.reduce((s,z) => s + (z.qtyFormwork||0), 0);
   const totalConcrete = zones.reduce((s,z) => s + (z.qtyConcrete||0), 0);
   const completedZones = zones.filter(z => z.status === 'Completed').length;
+
+  // Collect photo data URLs
+  const photoData = STATE.photos.map(p => ({ name: p.name, dataUrl: p.dataUrl }));
 
   const report = {
     date, site,
     shift: document.getElementById('rptShift').value,
     weather: document.getElementById('rptWeather').value,
     engineer, totalMP, manpower: mp,
-    rebar: totalRebar,
-    formwork: totalFormwork,
-    concrete: totalConcrete,
-    zones,
-    completedZones,
-    totalZones: zones.length,
+    manpowerLabels: ROLES,
+    rebar: totalRebar, formwork: totalFormwork, concrete: totalConcrete,
+    zones, completedZones, totalZones: zones.length,
     summary: document.getElementById('rptSummary').value,
     issues: document.getElementById('rptIssues').value,
     plan: document.getElementById('rptPlan').value,
     safety: document.getElementById('rptSafety').value,
     safetyDetail: document.getElementById('rptSafetyDetail').value,
-    photoCount: STATE.photos.length,
+    photos: photoData,
+    photoCount: photoData.length,
     timestamp: new Date().toISOString()
   };
 
   // Save locally
   STATE.reports.push(report);
-  localStorage.setItem('jx_reports', JSON.stringify(STATE.reports));
+  try { localStorage.setItem('jx_reports', JSON.stringify(STATE.reports)); } catch(e) { /* storage full */ }
 
   // Push to Sheet
   const pushed = await pushToSheet(report);
+
+  // Show preview of submitted report
+  showReportPreview(report);
 
   // Reset form
   ROLES.forEach((_,i) => document.getElementById('mp_'+i).value = 0);
@@ -1259,44 +1274,147 @@ async function submitReport() {
   if (pushed) {
     toast('✅ Report submitted & synced to Sheet!', 'ok');
   } else {
-    toast('✅ Report saved locally' + (STATE.sheetId ? ' (Sheet sync failed)' : ''), 'ok');
+    toast('✅ Report saved locally', 'ok');
   }
 }
 
 // ═══════════════════════════════════════
-// HISTORY
+// REPORT PREVIEW
 // ═══════════════════════════════════════
+function showReportPreview(r) {
+  const modal = document.getElementById('previewModal');
+  const content = document.getElementById('previewContent');
+
+  // Format date nicely
+  const dateStr = formatDate(r.date);
+
+  // Manpower breakdown
+  const mpHTML = (r.manpower||[]).map((v,i) => {
+    if (v === 0) return '';
+    const label = (r.manpowerLabels || ROLES)[i] || ROLES[i];
+    return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);font-size:0.8rem;"><span>${label}</span><span style="font-weight:600;">${v}</span></div>`;
+  }).filter(Boolean).join('');
+
+  // Zones
+  const zonesHTML = (r.zones||[]).map(z => {
+    const progress = z.progress||0;
+    const barColor = progress >= 100 ? 'var(--green)' : progress >= 50 ? 'var(--accent)' : 'var(--accent2)';
+    return `<div style="padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <strong style="font-size:0.82rem;">${z.level||''} ${z.location||'Zone'} ${z.gridLine?'('+z.gridLine+')':''}</strong>
+        <span style="font-size:0.72rem;padding:2px 8px;border-radius:4px;background:${z.status==='Completed'?'var(--green-bg)':'var(--accent2-bg)'};color:${z.status==='Completed'?'var(--green)':'var(--accent2)'};">${z.status}</span>
+      </div>
+      <div style="font-size:0.75rem;color:var(--ink2);margin-bottom:4px;">${z.type||''} — ${z.activity||''}</div>
+      <div style="display:flex;gap:8px;font-size:0.72rem;color:var(--ink3);margin-bottom:6px;">
+        <span>R:${z.rebar||0}</span><span>FW:${z.formwork||0}</span><span>C:${z.concrete||0}</span><span>S:${z.scaffold||0}</span><span>O:${z.others||0}</span>
+      </div>
+      <div style="display:flex;gap:8px;font-size:0.72rem;margin-bottom:6px;">
+        <span style="color:var(--red);">Rebar:${z.qtyRebar||0}T</span>
+        <span style="color:var(--purple);">FW:${z.qtyFormwork||0}㎡</span>
+        <span style="color:var(--green);">Conc:${z.qtyConcrete||0}m³</span>
+        <span style="color:var(--accent2);">Scaff:${z.qtyScaffold||0}m³</span>
+      </div>
+      <div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden;">
+        <div style="width:${progress}%;height:100%;background:${barColor};border-radius:4px;transition:width 0.3s;"></div>
+      </div>
+      <div style="font-size:0.68rem;color:var(--ink3);margin-top:2px;">Progress: ${progress}%</div>
+      ${z.notes?'<div style="font-size:0.72rem;color:var(--ink2);margin-top:4px;">📝 '+z.notes+'</div>':''}
+    </div>`;
+  }).join('');
+
+  // Photos
+  const photosHTML = (r.photos||[]).length > 0
+    ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:8px;">${r.photos.map(p => `<img src="${p.dataUrl}" style="width:100%;border-radius:6px;border:1px solid var(--border);">`).join('')}</div>`
+    : '<span style="font-size:0.8rem;color:var(--ink3);">No photos uploaded</span>';
+
+  const safetyColor = r.safety==='Normal'?'var(--green)':r.safety==='Near Miss'?'var(--amber)':'var(--red)';
+
+  content.innerHTML = `
+    <h2 style="font-size:1.1rem;font-weight:600;margin-bottom:4px;">📋 Daily Report — ${dateStr}</h2>
+    <div style="font-size:0.8rem;color:var(--ink3);margin-bottom:16px;">${r.site} · ${r.shift} Shift · ${r.weather} · Engineer: ${r.engineer}</div>
+
+    <div style="font-size:0.82rem;font-weight:600;margin:14px 0 8px;color:var(--accent2);">👷 Manpower Breakdown (Total: ${r.totalMP})</div>
+    ${mpHTML || '<span style="font-size:0.8rem;color:var(--ink3);">No manpower data</span>'}
+
+    <div style="font-size:0.82rem;font-weight:600;margin:18px 0 8px;color:var(--purple);">📍 Work Zones (${(r.zones||[]).length})</div>
+    ${zonesHTML || '<span style="font-size:0.8rem;color:var(--ink3);">No zones recorded</span>'}
+
+    <div style="font-size:0.82rem;font-weight:600;margin:18px 0 8px;color:var(--accent);">📷 Site Photos (${(r.photos||[]).length})</div>
+    ${photosHTML}
+
+    <div style="font-size:0.82rem;font-weight:600;margin:18px 0 8px;color:var(--ink);">📝 Summary & Notes</div>
+    <div style="font-size:0.8rem;color:var(--ink2);line-height:1.6;padding:8px 12px;background:var(--surface2);border-radius:6px;">
+      <div><strong>Summary:</strong> ${r.summary||'—'}</div>
+      <div style="margin-top:6px;"><strong>Issues:</strong> ${r.issues||'—'}</div>
+      <div style="margin-top:6px;"><strong>Tomorrow's Plan:</strong> ${r.plan||'—'}</div>
+    </div>
+
+    <div style="display:flex;gap:12px;margin-top:14px;">
+      <div style="font-size:0.82rem;font-weight:600;color:${safetyColor};">Safety: ${r.safety}</div>
+      ${r.safetyDetail?'<div style="font-size:0.8rem;color:var(--ink2);">'+r.safetyDetail+'</div>':''}
+    </div>
+  `;
+
+  modal.style.display = 'block';
+}
+
+// ═══════════════════════════════════════
+// HISTORY — expandable cards with full detail
+// ═══════════════════════════════════════
+function formatDate(d) {
+  if (!d) return '—';
+  try {
+    const parts = String(d).split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return d;
+  } catch(e) { return d; }
+}
+
 function renderHistory() {
   const siteFilter = document.getElementById('histSite').value;
   const monthFilter = document.getElementById('histMonth').value;
 
   let filtered = STATE.reports;
-  if (siteFilter !== 'All') filtered = filtered.filter(r => r.site === siteFilter);
+  if (siteFilter && siteFilter !== 'All') filtered = filtered.filter(r => r.site === siteFilter);
   if (monthFilter) filtered = filtered.filter(r => r.date && r.date.startsWith(monthFilter));
 
-  // Sort by date desc
   filtered.sort((a,b) => (b.date||'').localeCompare(a.date||''));
 
-  const body = document.getElementById('histBody');
+  const el = document.getElementById('histList');
   if (filtered.length === 0) {
-    body.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--ink3);padding:24px;">No records found</td></tr>';
+    el.innerHTML = '<div style="text-align:center;color:var(--ink3);padding:24px;font-size:0.85rem;">No records found</div>';
     return;
   }
 
-  body.innerHTML = filtered.map(r => {
-    const safetyColor = r.safety === 'Normal' ? 'var(--green)' : (r.safety === 'Near Miss' ? 'var(--amber)' : 'var(--red)');
-    return `<tr>
-      <td style="font-weight:600;white-space:nowrap;">${r.date}</td>
-      <td>${r.site}</td>
-      <td>${r.shift||'Day'}</td>
-      <td>${r.weather}</td>
-      <td style="font-weight:600;">${r.totalMP}</td>
-      <td>${r.rebar||0}T</td>
-      <td>${r.formwork||0}㎡</td>
-      <td>${r.concrete||0}m³</td>
-      <td style="color:${safetyColor};font-weight:500;">${r.safety}</td>
-      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.summary||'—'}</td>
-    </tr>`;
+  el.innerHTML = filtered.map((r, idx) => {
+    const dateStr = formatDate(r.date);
+    const safetyColor = r.safety==='Normal'?'var(--green)':r.safety==='Near Miss'?'var(--amber)':'var(--red)';
+    const photoCount = r.photoCount || (r.photos||[]).length || 0;
+
+    // Manpower summary
+    const mpSummary = (r.manpower||[]).map((v,i) => {
+      if (v === 0) return '';
+      return `<span style="font-size:0.7rem;padding:1px 6px;border-radius:3px;background:var(--surface2);border:1px solid var(--border);">${(r.manpowerLabels||ROLES)[i]||ROLES[i]}: ${v}</span>`;
+    }).filter(Boolean).join(' ');
+
+    return `<div style="border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;">
+      <div onclick="showReportPreview(STATE.reports[STATE.reports.indexOf(this.__rpt)||${STATE.reports.indexOf(r)}]);void(0)" 
+           style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;transition:background 0.2s;flex-wrap:wrap;"
+           onmouseover="this.style.background='rgba(217,119,6,0.03)'" onmouseout="this.style.background='transparent'"
+           onclick="showReportPreview(JSON.parse(this.dataset.rpt))" data-rpt='${JSON.stringify(r).replace(/'/g,"&#39;")}'>
+        <span style="font-weight:600;font-size:0.85rem;min-width:80px;">${dateStr}</span>
+        <span style="font-size:0.78rem;padding:2px 8px;border-radius:4px;background:var(--accent-bg);color:var(--accent);">${r.site}</span>
+        <span style="font-size:0.75rem;color:var(--ink3);">${r.shift||'Day'}</span>
+        <span style="font-size:0.75rem;color:var(--ink3);">${r.weather||''}</span>
+        <span style="font-weight:600;font-size:0.82rem;">${r.totalMP} pax</span>
+        <span style="font-size:0.72rem;color:var(--red);">R:${(r.rebar||0).toFixed(1)}T</span>
+        <span style="font-size:0.72rem;color:var(--purple);">F:${(r.formwork||0).toFixed(1)}㎡</span>
+        <span style="font-size:0.72rem;color:var(--green);">C:${(r.concrete||0).toFixed(1)}m³</span>
+        <span style="color:${safetyColor};font-size:0.75rem;font-weight:500;">${r.safety||'Normal'}</span>
+        ${photoCount > 0 ? `<span style="font-size:0.72rem;color:var(--accent2);">📷${photoCount}</span>` : ''}
+        <span style="font-size:0.72rem;color:var(--accent2);margin-left:auto;">▸ View</span>
+      </div>
+    </div>`;
   }).join('');
 }
 
