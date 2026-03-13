@@ -114,6 +114,14 @@ body { background:var(--bg); font-family:'DM Sans','Noto Sans SC',sans-serif; co
 .hist-table td { padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top; }
 .hist-table tr:hover td { background:rgba(217,119,6,0.03); }
 
+.history-card { border:1px solid var(--border); border-radius:10px; margin-bottom:12px; overflow:hidden; background:var(--surface); box-shadow:var(--shadow); }
+.history-card-head { display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--border); background:linear-gradient(180deg,#fff 0%,#faf9f7 100%); }
+.history-main { display:flex; align-items:center; gap:10px; flex-wrap:wrap; flex:1; }
+.history-actions { display:flex; gap:8px; margin-left:auto; }
+.btn-sm { padding:6px 10px; font-size:0.72rem; }
+.btn-danger { border-color:#fecaca; background:#fff; color:var(--red); }
+.btn-danger:hover { background:var(--red-bg); border-color:#fca5a5; color:#b91c1c; }
+
 /* Summary Card */
 .summary-stat { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:8px; }
 .stat-box { text-align:center; padding:14px 10px; border-radius:8px; background:var(--surface2); border:1px solid var(--border); }
@@ -150,6 +158,9 @@ body { background:var(--bg); font-family:'DM Sans','Noto Sans SC',sans-serif; co
     <input type="text" id="webAppUrl" placeholder="Paste your Web App URL here..." style="flex:2;">
     <button class="btn" onclick="connectWebApp()">Connect</button>
     <button class="btn btn-blue" onclick="pullFromSheet()">Pull Data</button>
+    <button class="btn" onclick="downloadBackup()">Backup</button>
+    <button class="btn" onclick="document.getElementById('backupInput').click()">Import</button>
+    <input type="file" id="backupInput" accept="application/json" style="display:none;" onchange="importBackup(this.files)">
     <span id="connStatus"></span>
   </div>
 
@@ -344,7 +355,7 @@ body { background:var(--bg); font-family:'DM Sans','Noto Sans SC',sans-serif; co
     </div>
 
     <!-- Submit -->
-    <button class="btn btn-primary" onclick="submitReport()" style="width:100%;padding:14px;font-size:1rem;">
+    <button class="btn btn-primary" id="submitBtn" onclick="submitReport()" style="width:100%;padding:14px;font-size:1rem;">
       ✅ Submit Daily Report
     </button>
   </div>
@@ -437,7 +448,8 @@ const ROLES = [
 let STATE = {
   webAppUrl: 'https://script.google.com/macros/s/AKfycbx8LeyT43ws-qRpddhlvTYTJGtO1vW7KHr_ysqfy-ABl-sMgraGn6Cd7OXf0qoH2feycw/exec',
   reports: [],
-  photos: []
+  photos: [],
+  editingReportId: null
 };
 
 let zoneCount = 0;
@@ -1206,7 +1218,139 @@ async function pullFromSheet() {
 }
 
 // ═══════════════════════════════════════
-// SUBMIT
+// REPORT IDENTITY & NORMALIZATION
+// ═══════════════════════════════════════
+function generateReportId(report) {
+  const base = [report.date||'', report.site||'', report.engineer||'', report.timestamp||new Date().toISOString()].join('|');
+  let hash = 0;
+  for (let i = 0; i < base.length; i++) hash = ((hash << 5) - hash + base.charCodeAt(i)) | 0;
+  return 'rpt_' + Math.abs(hash) + '_' + Date.now().toString(36);
+}
+
+function reportKeyOf(report) {
+  return report.reportId || report.timestamp || [report.date||'', report.site||'', report.engineer||''].join('|');
+}
+
+function setSubmitButtonEditing(isEditing) {
+  const btn = document.getElementById('submitBtn');
+  if (!btn) return;
+  btn.textContent = isEditing ? '💾 Update Daily Report' : '✅ Submit Daily Report';
+}
+
+function normalizeReportForUI(r) {
+  const photos = Array.isArray(r.photos) ? r.photos.map(p => {
+    if (typeof p === 'string') return { name: 'Photo', dataUrl: p };
+    return { name: p.name || 'Photo', dataUrl: p.dataUrl || p.url || '' };
+  }).filter(p => p.dataUrl) : [];
+  const normalized = {
+    ...r,
+    zones: Array.isArray(r.zones) ? r.zones : [],
+    manpower: Array.isArray(r.manpower) ? r.manpower : [],
+    manpowerLabels: Array.isArray(r.manpowerLabels) ? r.manpowerLabels : ROLES,
+    photos,
+    photoCount: photos.length || parseInt(r.photoCount) || 0
+  };
+  if (!normalized.reportId) normalized.reportId = generateReportId(normalized);
+  return normalized;
+}
+
+function saveReportsCache() {
+  localStorage.setItem('jx_reports', JSON.stringify(STATE.reports));
+  renderHistory();
+  renderSummary();
+  renderLocationSummary();
+}
+
+// ═══════════════════════════════════════
+// EDIT & DELETE
+// ═══════════════════════════════════════
+function editFilteredReport(idx) {
+  const report = filteredReportsCache[idx];
+  if (!report) return;
+  // Fill form with report data
+  document.getElementById('rptDate').value = getISODate(report.date || '') || '';
+  document.getElementById('rptSite').value = report.site || savedSites[0] || '';
+  document.getElementById('rptShift').value = report.shift || 'Day';
+  document.getElementById('rptWeather').value = report.weather || 'Fine';
+  document.getElementById('rptEngineer').value = report.engineer || '';
+  ROLES.forEach((_,i) => {
+    document.getElementById('mp_'+i).value = (report.manpower && report.manpower[i]) ? report.manpower[i] : 0;
+  });
+  calcTotal();
+  document.getElementById('zonesContainer').innerHTML = '';
+  zoneCount = 0;
+  document.getElementById('rptSummary').value = report.summary || '';
+  document.getElementById('rptIssues').value = report.issues || '';
+  document.getElementById('rptPlan').value = report.plan || '';
+  document.getElementById('rptSafety').value = report.safety || 'Normal';
+  document.getElementById('rptSafetyDetail').value = report.safetyDetail || '';
+  STATE.photos = (report.photos || []).map(p => ({ name: p.name || 'Photo', dataUrl: p.dataUrl }));
+  renderPhotoPreviews();
+  STATE.editingReportId = report.reportId || null;
+  setSubmitButtonEditing(true);
+  // Switch to submit tab
+  document.querySelector('.tab-btn[onclick="switchTab(\'submit\')"]').click();
+  toast('✏️ Report loaded for editing. Click "Update Daily Report" to save.', 'ok');
+}
+
+async function deleteFilteredReport(idx) {
+  const report = filteredReportsCache[idx];
+  if (!report) return;
+  const ok = confirm('Delete report for ' + formatDate(report.date) + ' (' + report.site + ')? This cannot be undone.');
+  if (!ok) return;
+  const key = reportKeyOf(report);
+  STATE.reports = STATE.reports.filter(r => reportKeyOf(r) !== key);
+  saveReportsCache();
+  toast('🗑️ Report deleted', 'ok');
+}
+
+// ═══════════════════════════════════════
+// BACKUP & RESTORE
+// ═══════════════════════════════════════
+function downloadBackup() {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    reports: STATE.reports,
+    savedZones, savedLevels, savedLocations, savedSites
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'jx-site-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('⬇️ Backup downloaded', 'ok');
+}
+
+function importBackup(files) {
+  const file = files && files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      STATE.reports = Array.isArray(parsed.reports) ? parsed.reports.map(normalizeReportForUI) : [];
+      savedZones = Array.isArray(parsed.savedZones) ? parsed.savedZones : savedZones;
+      savedLevels = Array.isArray(parsed.savedLevels) ? parsed.savedLevels : savedLevels;
+      savedLocations = Array.isArray(parsed.savedLocations) ? parsed.savedLocations : savedLocations;
+      savedSites = Array.isArray(parsed.savedSites) && parsed.savedSites.length ? parsed.savedSites : savedSites;
+      localStorage.setItem('jx_zones', JSON.stringify(savedZones));
+      localStorage.setItem('jx_levels', JSON.stringify(savedLevels));
+      localStorage.setItem('jx_locations', JSON.stringify(savedLocations));
+      localStorage.setItem('jx_sites', JSON.stringify(savedSites));
+      saveReportsCache();
+      refreshAllSiteDropdowns();
+      refreshZoneDropdown();
+      renderLevelTags();
+      renderLocationTags();
+      toast('✅ Backup imported', 'ok');
+    } catch(err) {
+      toast('Invalid backup file', 'err');
+    }
+  };
+  reader.readAsText(file);
+  document.getElementById('backupInput').value = '';
+}
 // ═══════════════════════════════════════
 async function submitReport() {
   const date = document.getElementById('rptDate').value;
@@ -1246,11 +1390,19 @@ async function submitReport() {
     safetyDetail: document.getElementById('rptSafetyDetail').value,
     photos: photoData,
     photoCount: photoData.length,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    reportId: STATE.editingReportId || generateReportId({ date, site, engineer, timestamp: new Date().toISOString() })
   };
 
-  // Save locally
-  STATE.reports.push(report);
+  // Save locally (update if editing, add if new)
+  const normalizedReport = normalizeReportForUI(report);
+  if (STATE.editingReportId) {
+    const existingIdx = STATE.reports.findIndex(r => reportKeyOf(r) === STATE.editingReportId);
+    if (existingIdx >= 0) STATE.reports[existingIdx] = normalizedReport;
+    else STATE.reports.push(normalizedReport);
+  } else {
+    STATE.reports.push(normalizedReport);
+  }
   try { localStorage.setItem('jx_reports', JSON.stringify(STATE.reports)); } catch(e) { /* storage full */ }
 
   // Push to Sheet
@@ -1268,6 +1420,8 @@ async function submitReport() {
   ['rptSummary','rptIssues','rptPlan','rptSafetyDetail','quickPaste'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('rptSafety').value = 'Normal';
   STATE.photos = []; renderPhotoPreviews();
+  STATE.editingReportId = null;
+  setSubmitButtonEditing(false);
 
   renderHistory();
   renderSummary();
@@ -1293,7 +1447,7 @@ function showReportPreview(r) {
   const mpHTML = (r.manpower||[]).map((v,i) => {
     if (v === 0) return '';
     const label = (r.manpowerLabels || ROLES)[i] || ROLES[i];
-    return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);font-size:0.8rem;"><span>${label}</span><span style="font-weight:600;">${v}</span></div>`;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-size:0.86rem;background:var(--surface2);"><span style="color:var(--ink2);">${label}</span><span style="font-weight:700;color:var(--ink);">${v}</span></div>`;
   }).filter(Boolean).join('');
 
   // Zones
@@ -1429,22 +1583,26 @@ function renderHistory() {
     const safetyColor = r.safety==='Normal'?'var(--green)':r.safety==='Near Miss'?'var(--amber)':'var(--red)';
     const photoCount = r.photoCount || (r.photos||[]).length || 0;
 
-    return `<div style="border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;">
-      <div onclick="viewFilteredReport(${idx})"
-           style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;transition:background 0.2s;flex-wrap:wrap;"
-           onmouseover="this.style.background='rgba(217,119,6,0.03)'" onmouseout="this.style.background='transparent'">
-        <span style="font-weight:600;font-size:0.85rem;min-width:80px;">${dateStr}</span>
-        <span style="font-size:0.78rem;padding:2px 8px;border-radius:4px;background:var(--accent-bg);color:var(--accent);">${r.site||''}</span>
-        <span style="font-size:0.75rem;color:var(--ink3);">${r.shift||'Day'}</span>
-        <span style="font-size:0.75rem;color:var(--ink3);">${r.weather||''}</span>
-        <span style="font-weight:600;font-size:0.82rem;">${r.totalMP||0} pax</span>
-        <span style="font-size:0.72rem;color:var(--red);">R:${(r.rebar||0).toFixed(1)}T</span>
-        <span style="font-size:0.72rem;color:var(--purple);">F:${(r.formwork||0).toFixed(1)}m2</span>
-        <span style="font-size:0.72rem;color:var(--green);">C:${(r.concrete||0).toFixed(1)}m3</span>
-        <span style="color:${safetyColor};font-size:0.75rem;font-weight:500;">${r.safety||'Normal'}</span>
-        ${photoCount > 0 ? `<span style="font-size:0.72rem;color:var(--accent2);">📷${photoCount}</span>` : ''}
-        <span style="font-size:0.72rem;color:var(--accent2);margin-left:auto;">▸ View</span>
+    return `<div class="history-card">
+      <div class="history-card-head">
+        <div onclick="viewFilteredReport(${idx})" class="history-main" style="cursor:pointer;">
+          <span style="font-weight:700;font-size:0.88rem;min-width:90px;">${dateStr}</span>
+          <span style="font-size:0.76rem;padding:3px 10px;border-radius:999px;background:var(--accent-bg);color:var(--accent);font-weight:600;">${r.site||''}</span>
+          <span style="font-size:0.75rem;color:var(--ink3);">${r.shift||'Day'} · ${r.weather||''}</span>
+          <span style="font-weight:600;font-size:0.82rem;">${r.totalMP||0} pax</span>
+          <span style="font-size:0.72rem;color:var(--red);">R:${(r.rebar||0).toFixed(1)}T</span>
+          <span style="font-size:0.72rem;color:var(--purple);">F:${(r.formwork||0).toFixed(1)}m²</span>
+          <span style="font-size:0.72rem;color:var(--green);">C:${(r.concrete||0).toFixed(1)}m³</span>
+          <span style="color:${safetyColor};font-size:0.75rem;font-weight:600;">${r.safety||'Normal'}</span>
+          ${photoCount > 0 ? `<span style="font-size:0.72rem;color:var(--accent2);font-weight:600;">📷 ${photoCount}</span>` : ''}
+        </div>
+        <div class="history-actions">
+          <button class="btn btn-sm" onclick="viewFilteredReport(${idx})">View</button>
+          <button class="btn btn-sm" onclick="editFilteredReport(${idx})">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteFilteredReport(${idx})">Delete</button>
+        </div>
       </div>
+      ${(r.photos||[]).length ? `<div style="display:flex;gap:8px;padding:10px 16px;background:var(--surface2);border-top:1px solid var(--border);">${r.photos.slice(0,4).map(p => `<img src="${p.dataUrl || p}" style="width:54px;height:54px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">`).join('')}</div>` : ''}
     </div>`;
   }).join('');
 }
@@ -1544,9 +1702,11 @@ function renderLocationSummary() {
     if (r.zones && Array.isArray(r.zones)) {
       r.zones.forEach(z => {
         const loc = z.location || '';
+        const level = z.level || '';
         if (!loc) return;
-        if (!locMap[loc]) locMap[loc] = { dates: [], completed: false, site: r.site, createdDate: r.date };
-        locMap[loc].dates.push({
+        const locKey = level ? (level + ' — ' + loc) : loc;
+        if (!locMap[locKey]) locMap[locKey] = { dates: [], completed: false, site: r.site, createdDate: r.date };
+        locMap[locKey].dates.push({
           date: r.date, site: r.site,
           rebar: z.rebar||0, formwork: z.formwork||0, concrete: z.concrete||0, scaffold: z.scaffold||0, others: z.others||0,
           qtyRebar: z.qtyRebar||0, qtyFormwork: z.qtyFormwork||0, qtyConcrete: z.qtyConcrete||0, qtyScaffold: z.qtyScaffold||0,
