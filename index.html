@@ -449,7 +449,8 @@ let STATE = {
   webAppUrl: 'https://script.google.com/macros/s/AKfycbx8LeyT43ws-qRpddhlvTYTJGtO1vW7KHr_ysqfy-ABl-sMgraGn6Cd7OXf0qoH2feycw/exec',
   reports: [],
   photos: [],
-  editingReportId: null
+  editingReportId: null,
+  editingTimestamp: null
 };
 
 let zoneCount = 0;
@@ -1287,6 +1288,7 @@ function editFilteredReport(idx) {
   STATE.photos = (report.photos || []).map(p => ({ name: p.name || 'Photo', dataUrl: p.dataUrl }));
   renderPhotoPreviews();
   STATE.editingReportId = report.reportId || null;
+  STATE.editingTimestamp = report.timestamp || null;
   setSubmitButtonEditing(true);
   // Switch to submit tab
   document.querySelector('.tab-btn[onclick="switchTab(\'submit\')"]').click();
@@ -1296,12 +1298,22 @@ function editFilteredReport(idx) {
 async function deleteFilteredReport(idx) {
   const report = filteredReportsCache[idx];
   if (!report) return;
-  const ok = confirm('Delete report for ' + formatDate(report.date) + ' (' + report.site + ')? This cannot be undone.');
+  const ok = confirm('Delete report for ' + formatDate(report.date) + ' (' + report.site + ', ' + (report.shift||'Day') + ' shift)?\n\nThis cannot be undone.');
   if (!ok) return;
-  const key = reportKeyOf(report);
-  STATE.reports = STATE.reports.filter(r => reportKeyOf(r) !== key);
-  saveReportsCache();
-  toast('🗑️ Report deleted', 'ok');
+  // Find exact match in STATE.reports by reference or unique reportId
+  const rid = report.reportId;
+  const ts = report.timestamp;
+  const globalIdx = STATE.reports.findIndex(r =>
+    (rid && r.reportId === rid) || (ts && r.timestamp === ts) ||
+    (r.date === report.date && r.site === report.site && r.shift === report.shift && r.engineer === report.engineer && r.timestamp === report.timestamp)
+  );
+  if (globalIdx >= 0) {
+    STATE.reports.splice(globalIdx, 1);
+    saveReportsCache();
+    toast('🗑️ Report deleted', 'ok');
+  } else {
+    toast('Report not found', 'err');
+  }
 }
 
 // ═══════════════════════════════════════
@@ -1397,9 +1409,14 @@ async function submitReport() {
   // Save locally (update if editing, add if new)
   const normalizedReport = normalizeReportForUI(report);
   if (STATE.editingReportId) {
-    const existingIdx = STATE.reports.findIndex(r => reportKeyOf(r) === STATE.editingReportId);
-    if (existingIdx >= 0) STATE.reports[existingIdx] = normalizedReport;
-    else STATE.reports.push(normalizedReport);
+    // Find by reportId first, then by timestamp
+    let existingIdx = STATE.reports.findIndex(r => r.reportId && r.reportId === STATE.editingReportId);
+    if (existingIdx < 0) existingIdx = STATE.reports.findIndex(r => r.timestamp && r.timestamp === STATE.editingTimestamp);
+    if (existingIdx >= 0) {
+      STATE.reports[existingIdx] = normalizedReport;
+    } else {
+      STATE.reports.push(normalizedReport);
+    }
   } else {
     STATE.reports.push(normalizedReport);
   }
@@ -1421,6 +1438,7 @@ async function submitReport() {
   document.getElementById('rptSafety').value = 'Normal';
   STATE.photos = []; renderPhotoPreviews();
   STATE.editingReportId = null;
+  STATE.editingTimestamp = null;
   setSubmitButtonEditing(false);
 
   renderHistory();
@@ -1461,13 +1479,13 @@ function showReportPreview(r) {
       </div>
       <div style="font-size:0.75rem;color:var(--ink2);margin-bottom:4px;">${z.type||''} — ${z.activity||''}</div>
       <div style="display:flex;gap:8px;font-size:0.72rem;color:var(--ink3);margin-bottom:6px;">
-        <span>R:${z.rebar||0}</span><span>FW:${z.formwork||0}</span><span>C:${z.concrete||0}</span><span>S:${z.scaffold||0}</span><span>O:${z.others||0}</span>
+        <span>Rebar: ${z.rebar||0}</span><span>Formwork: ${z.formwork||0}</span><span>Concrete: ${z.concrete||0}</span><span>Scaffold: ${z.scaffold||0}</span><span>Others: ${z.others||0}</span>
       </div>
       <div style="display:flex;gap:8px;font-size:0.72rem;margin-bottom:6px;">
-        <span style="color:var(--red);">Rebar:${z.qtyRebar||0}T</span>
-        <span style="color:var(--purple);">FW:${z.qtyFormwork||0}㎡</span>
-        <span style="color:var(--green);">Conc:${z.qtyConcrete||0}m³</span>
-        <span style="color:var(--accent2);">Scaff:${z.qtyScaffold||0}m³</span>
+        <span style="color:var(--red);">Rebar: ${z.qtyRebar||0}T</span>
+        <span style="color:var(--purple);">Formwork: ${z.qtyFormwork||0}m²</span>
+        <span style="color:var(--green);">Concrete: ${z.qtyConcrete||0}m³</span>
+        <span style="color:var(--accent2);">Scaffold: ${z.qtyScaffold||0}m³</span>
       </div>
       <div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden;">
         <div style="width:${progress}%;height:100%;background:${barColor};border-radius:4px;transition:width 0.3s;"></div>
@@ -1590,9 +1608,9 @@ function renderHistory() {
           <span style="font-size:0.76rem;padding:3px 10px;border-radius:999px;background:var(--accent-bg);color:var(--accent);font-weight:600;">${r.site||''}</span>
           <span style="font-size:0.75rem;color:var(--ink3);">${r.shift||'Day'} · ${r.weather||''}</span>
           <span style="font-weight:600;font-size:0.82rem;">${r.totalMP||0} pax</span>
-          <span style="font-size:0.72rem;color:var(--red);">R:${(r.rebar||0).toFixed(1)}T</span>
-          <span style="font-size:0.72rem;color:var(--purple);">F:${(r.formwork||0).toFixed(1)}m²</span>
-          <span style="font-size:0.72rem;color:var(--green);">C:${(r.concrete||0).toFixed(1)}m³</span>
+          <span style="font-size:0.72rem;color:var(--red);">Rebar: ${(r.rebar||0).toFixed(1)}T</span>
+          <span style="font-size:0.72rem;color:var(--purple);">Formwork: ${(r.formwork||0).toFixed(1)}m²</span>
+          <span style="font-size:0.72rem;color:var(--green);">Concrete: ${(r.concrete||0).toFixed(1)}m³</span>
           <span style="color:${safetyColor};font-size:0.75rem;font-weight:600;">${r.safety||'Normal'}</span>
           ${photoCount > 0 ? `<span style="font-size:0.72rem;color:var(--accent2);font-weight:600;">📷 ${photoCount}</span>` : ''}
         </div>
@@ -1738,15 +1756,15 @@ function renderLocationSummary() {
       : '<span style="padding:2px 8px;border-radius:4px;font-size:0.68rem;font-weight:600;background:var(--accent2-bg);color:var(--accent2);">🔵 In Progress</span>';
 
     // Detail rows for each date
-    const detailRows = data.dates.length > 0 ? data.dates.sort((a,b) => a.date.localeCompare(b.date)).map(d =>
-      `<div style="display:flex;gap:8px;padding:5px 12px;font-size:0.72rem;color:var(--ink2);border-bottom:1px solid var(--border);">
-        <span style="min-width:80px;font-weight:500;">${d.date}</span>
-        <span style="min-width:60px;">${d.activity||'—'}</span>
-        <span style="color:var(--red);min-width:45px;">R:${d.qtyRebar}T</span>
-        <span style="color:var(--purple);min-width:45px;">F:${d.qtyFormwork}㎡</span>
-        <span style="color:var(--green);min-width:50px;">C:${d.qtyConcrete}m³</span>
-        <span style="color:var(--accent2);min-width:45px;">S:${d.qtyScaffold}m³</span>
-        <span style="color:var(--ink3);min-width:40px;">${d.rebar+d.formwork+d.concrete+d.scaffold+d.others}pax</span>
+    const detailRows = data.dates.length > 0 ? data.dates.sort((a,b) => (a.date||'').localeCompare(b.date||'')).map(d =>
+      `<div style="display:flex;gap:8px;padding:6px 12px;font-size:0.75rem;color:var(--ink2);border-bottom:1px solid var(--border);align-items:center;">
+        <span style="min-width:85px;font-weight:500;">${formatDate(d.date)}</span>
+        <span style="min-width:80px;">${d.activity||'—'}</span>
+        <span style="color:var(--red);min-width:65px;">Rebar: ${d.qtyRebar}T</span>
+        <span style="color:var(--purple);min-width:75px;">Formwork: ${d.qtyFormwork}m²</span>
+        <span style="color:var(--green);min-width:80px;">Concrete: ${d.qtyConcrete}m³</span>
+        <span style="color:var(--accent2);min-width:75px;">Scaffold: ${d.qtyScaffold}m³</span>
+        <span style="color:var(--ink3);min-width:45px;">${d.rebar+d.formwork+d.concrete+d.scaffold+d.others} pax</span>
       </div>`
     ).join('') : '<div style="padding:8px 12px;font-size:0.75rem;color:var(--ink3);">No daily records yet</div>';
 
@@ -1761,18 +1779,38 @@ function renderLocationSummary() {
           <span style="font-size:0.72rem;color:var(--ink3);">${data.site||''}</span>
           <span style="font-size:0.72rem;padding:2px 8px;border-radius:4px;background:var(--accent-bg);color:var(--accent);font-weight:600;">${dayCount} days</span>
           <span style="font-size:0.72rem;color:var(--ink3);">${totalWorkers} man-days</span>
+          ${dayCount === 0 ? `<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteLocation_summary('${name.replace(/'/g,"\\'")}');" style="padding:3px 8px;font-size:0.65rem;">Delete</button>` : ''}
         </div>
         <div style="display:none;border-top:1px solid var(--border);">
           <div style="display:flex;gap:8px;padding:8px 12px;background:rgba(0,0,0,0.02);">
             <div class="stat-box" style="flex:1;padding:8px;"><div class="stat-val" style="font-size:0.9rem;color:var(--red);">${totalRebar.toFixed(2)}</div><div class="stat-lbl">Total Rebar (T)</div></div>
-            <div class="stat-box" style="flex:1;padding:8px;"><div class="stat-val" style="font-size:0.9rem;color:var(--purple);">${totalFW.toFixed(1)}</div><div class="stat-lbl">Total FW (㎡)</div></div>
-            <div class="stat-box" style="flex:1;padding:8px;"><div class="stat-val" style="font-size:0.9rem;color:var(--green);">${totalConc.toFixed(1)}</div><div class="stat-lbl">Total Conc (m³)</div></div>
-            <div class="stat-box" style="flex:1;padding:8px;"><div class="stat-val" style="font-size:0.9rem;color:var(--accent2);">${totalScaff.toFixed(1)}</div><div class="stat-lbl">Total Scaff (m³)</div></div>
+            <div class="stat-box" style="flex:1;padding:8px;"><div class="stat-val" style="font-size:0.9rem;color:var(--purple);">${totalFW.toFixed(1)}</div><div class="stat-lbl">Total Formwork (m²)</div></div>
+            <div class="stat-box" style="flex:1;padding:8px;"><div class="stat-val" style="font-size:0.9rem;color:var(--green);">${totalConc.toFixed(1)}</div><div class="stat-lbl">Total Concrete (m³)</div></div>
+            <div class="stat-box" style="flex:1;padding:8px;"><div class="stat-val" style="font-size:0.9rem;color:var(--accent2);">${totalScaff.toFixed(1)}</div><div class="stat-lbl">Total Scaffold (m³)</div></div>
           </div>
           ${detailRows}
         </div>
       </div>`;
   }).join('');
+}
+
+// ═══════════════════════════════════════
+// DELETE LOCATION FROM SUMMARY
+// ═══════════════════════════════════════
+function deleteLocation_summary(name) {
+  if (!confirm('Delete location "' + name + '"? This only removes it from saved zones and locations list, not from submitted reports.')) return;
+  // Remove from savedZones
+  savedZones = savedZones.filter(z => z.name !== name && (z.name + '') !== name);
+  localStorage.setItem('jx_zones', JSON.stringify(savedZones));
+  // Remove from savedLocations
+  const plainName = name.includes(' — ') ? name.split(' — ').pop() : name;
+  savedLocations = savedLocations.filter(l => l !== name && l !== plainName);
+  localStorage.setItem('jx_locations', JSON.stringify(savedLocations));
+  // Refresh
+  refreshZoneDropdown();
+  renderLocationTags();
+  renderLocationSummary();
+  toast('🗑️ Location "' + name + '" deleted', 'ok');
 }
 
 // ═══════════════════════════════════════
