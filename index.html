@@ -1222,7 +1222,9 @@ async function pullFromSheet() {
           safety: r.safety||'Normal',
           safetyDetail: r.safetyDetail||'',
           photos: photos,
-          photoCount: photos.length || parseInt(r.photoCount)||0
+          photoCount: photos.length || parseInt(r.photoCount)||0,
+          timestamp: r.timestamp||'',
+          reportId: r.reportId||''
         };
       });
       localStorage.setItem('jx_reports', JSON.stringify(STATE.reports));
@@ -1339,7 +1341,7 @@ async function deleteFilteredReport(idx) {
     // Also delete from Google Sheet
     if (STATE.webAppUrl) {
       try {
-        await fetch(STATE.webAppUrl, {
+        const delRes = await fetch(STATE.webAppUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({
@@ -1350,7 +1352,16 @@ async function deleteFilteredReport(idx) {
             timestamp: report.timestamp || ''
           })
         });
-        toast('🗑️ Deleted from Sheet', 'ok');
+        const delJson = await delRes.json();
+        if (delJson.success) {
+          toast('🗑️ Deleted from Sheet', 'ok');
+        } else {
+          // Sheet删除失败，回滚本地
+          STATE.reports.splice(globalIdx, 0, report);
+          saveReportsCache();
+          renderHistory();
+          toast('❌ Sheet delete failed: ' + (delJson.error||'unknown'), 'err');
+        }
       } catch(e) {
         toast('Deleted locally, Sheet sync failed', 'err');
       }
