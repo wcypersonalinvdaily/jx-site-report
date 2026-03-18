@@ -159,6 +159,7 @@ body { background:var(--bg); font-family:'Inter',system-ui,-apple-system,sans-se
     <input type="text" id="webAppUrl" placeholder="Paste your Web App URL here..." style="flex:2;">
     <button class="btn" onclick="connectWebApp()">Connect</button>
     <button class="btn btn-blue" onclick="pullFromSheet()">Pull Data</button>
+    <button class="btn" onclick="cleanDuplicates()" style="background:#f59e0b;color:#fff;" title="Remove duplicate reports (same date+site+shift, keep latest)">🧹 Clean Duplicates</button>
     <button class="btn" onclick="downloadBackup()">Backup</button>
     <button class="btn" onclick="document.getElementById('backupInput').click()">Import</button>
     <input type="file" id="backupInput" accept="application/json" style="display:none;" onchange="importBackup(this.files)">
@@ -1280,6 +1281,87 @@ function saveReportsCache() {
   renderHistory();
   renderSummary();
   renderLocationSummary();
+}
+
+// ═══════════════════════════════════════
+// CLEAN DUPLICATES
+// ═══════════════════════════════════════
+async function cleanDuplicates() {
+  // Group by date + site + shift
+  const groups = {};
+  STATE.reports.forEach((r, idx) => {
+    const key = (r.date||'') + '|' + (r.site||'') + '|' + (r.shift||'Day');
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({ r, idx });
+  });
+
+  // Find duplicates — keep the one with latest timestamp
+  const toDelete = []; // reports to delete from Sheet
+  const keepIndices = new Set();
+
+  Object.values(groups).forEach(group => {
+    if (group.length <= 1) {
+      keepIndices.add(group[0].idx);
+      return;
+    }
+    // Sort by timestamp descending, keep first
+    group.sort((a, b) => {
+      const ta = a.r.timestamp || '';
+      const tb = b.r.timestamp || '';
+      return tb.localeCompare(ta);
+    });
+    keepIndices.add(group[0].idx);
+    // Rest are duplicates
+    for (let i = 1; i < group.length; i++) {
+      toDelete.push(group[i].r);
+    }
+  });
+
+  if (toDelete.length === 0) {
+    toast('✅ No duplicates found', 'ok');
+    return;
+  }
+
+  const confirm1 = confirm(`Found ${toDelete.length} duplicate report(s).\n\nThey will be deleted from both local and Google Sheet.\nOnly the latest version of each day/site/shift will be kept.\n\nProceed?`);
+  if (!confirm1) return;
+
+  // Update local state
+  STATE.reports = STATE.reports.filter((_, idx) => keepIndices.has(idx));
+  saveReportsCache();
+  toast(`🧹 Removed ${toDelete.length} duplicates locally. Syncing to Sheet...`, 'ok');
+
+  // Delete from Sheet
+  if (!STATE.webAppUrl) {
+    toast('✅ Local cleaned. Connect Web App to sync Sheet.', 'ok');
+    return;
+  }
+
+  let failed = 0;
+  for (const rep of toDelete) {
+    try {
+      const res = await fetch(STATE.webAppUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'delete',
+          date: rep.date,
+          site: rep.site,
+          shift: rep.shift,
+          timestamp: rep.timestamp || ''
+        })
+      });
+      const json = await res.json();
+      if (!json.success) failed++;
+    } catch(e) {
+      failed++;
+    }
+  }
+
+  if (failed === 0) {
+    toast(`✅ Done! Removed ${toDelete.length} duplicates from Sheet.`, 'ok');
+  } else {
+    toast(`⚠️ ${toDelete.length - failed} deleted, ${failed} Sheet sync failed. Pull & clean again.`, 'err');
+  }
 }
 
 // ═══════════════════════════════════════
