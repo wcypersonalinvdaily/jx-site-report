@@ -1307,6 +1307,9 @@ function editFilteredReport(idx) {
   renderPhotoPreviews();
   STATE.editingReportId = report.reportId || null;
   STATE.editingTimestamp = report.timestamp || null;
+  STATE.editingOriginalDate = report.date || null;
+  STATE.editingOriginalSite = report.site || null;
+  STATE.editingOriginalShift = report.shift || null;
   setSubmitButtonEditing(true);
   // Switch to submit tab
   document.querySelector('.tab-btn[onclick="switchTab(\'submit\')"]').click();
@@ -1316,9 +1319,9 @@ function editFilteredReport(idx) {
 async function deleteFilteredReport(idx) {
   const report = filteredReportsCache[idx];
   if (!report) return;
-  const ok = confirm('Delete report for ' + formatDate(report.date) + ' (' + report.site + ', ' + (report.shift||'Day') + ' shift)?\n\nThis cannot be undone.');
+  const ok = confirm('Delete report for ' + formatDate(report.date) + ' (' + report.site + ', ' + (report.shift||'Day') + ' shift)?\n\nThis will delete from both local and Google Sheet. Cannot be undone.');
   if (!ok) return;
-  // Find exact match in STATE.reports by reference or unique reportId
+  // Find exact match in STATE.reports
   const rid = report.reportId;
   const ts = report.timestamp;
   const globalIdx = STATE.reports.findIndex(r =>
@@ -1328,7 +1331,30 @@ async function deleteFilteredReport(idx) {
   if (globalIdx >= 0) {
     STATE.reports.splice(globalIdx, 1);
     saveReportsCache();
-    toast('🗑️ Report deleted', 'ok');
+    renderHistory();
+    renderSummary();
+    renderLocationSummary();
+    toast('🗑️ Deleting from Sheet...', 'ok');
+    
+    // Also delete from Google Sheet
+    if (STATE.webAppUrl) {
+      try {
+        await fetch(STATE.webAppUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({
+            action: 'delete',
+            date: report.date,
+            site: report.site,
+            shift: report.shift,
+            timestamp: report.timestamp || ''
+          })
+        });
+        toast('🗑️ Deleted from Sheet', 'ok');
+      } catch(e) {
+        toast('Deleted locally, Sheet sync failed', 'err');
+      }
+    }
   } else {
     toast('Report not found', 'err');
   }
@@ -1394,7 +1420,7 @@ async function submitReport() {
   const absentIdx = ROLES.indexOf('Absent');
   const mp = ROLES.map((_,i) => parseInt(document.getElementById('mp_'+i).value)||0);
   let totalMP = 0;
-  mp.forEach((v,i) => { if (i !== absentIdx) totalMP += v; });
+  mp.forEach((v,i) => { if (i !== absentIdx && i !== supplyIdx) totalMP += v; });
 
   const zones = getZones();
   const totalRebar = zones.reduce((s,z) => s + (z.qtyRebar||0), 0);
@@ -1440,7 +1466,14 @@ async function submitReport() {
   }
   try { localStorage.setItem('jx_reports', JSON.stringify(STATE.reports)); } catch(e) { /* storage full */ }
 
-  // Push to Sheet
+  // Push to Sheet (use 'update' action if editing, 'submit' if new)
+  if (STATE.editingReportId) {
+    report.action = 'update';
+    report.originalDate = STATE.editingOriginalDate || report.date;
+    report.originalSite = STATE.editingOriginalSite || report.site;
+    report.originalTimestamp = STATE.editingTimestamp || '';
+    report.originalShift = STATE.editingOriginalShift || report.shift;
+  }
   const pushed = await pushToSheet(report);
 
   // Show preview of submitted report
@@ -1457,6 +1490,9 @@ async function submitReport() {
   STATE.photos = []; renderPhotoPreviews();
   STATE.editingReportId = null;
   STATE.editingTimestamp = null;
+  STATE.editingOriginalDate = null;
+  STATE.editingOriginalSite = null;
+  STATE.editingOriginalShift = null;
   setSubmitButtonEditing(false);
 
   renderHistory();
