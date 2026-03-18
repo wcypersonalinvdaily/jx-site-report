@@ -1405,13 +1405,17 @@ async function deleteFilteredReport(idx) {
   if (!report) return;
   const ok = confirm('Delete report for ' + formatDate(report.date) + ' (' + report.site + ', ' + (report.shift||'Day') + ' shift)?\n\nThis will delete from both local and Google Sheet. Cannot be undone.');
   if (!ok) return;
-  // Find exact match in STATE.reports
-  const rid = report.reportId;
-  const ts = report.timestamp;
-  const globalIdx = STATE.reports.findIndex(r =>
-    (rid && r.reportId === rid) || (ts && r.timestamp === ts) ||
-    (r.date === report.date && r.site === report.site && r.shift === report.shift && r.engineer === report.engineer && r.timestamp === report.timestamp)
-  );
+  // Use object reference to find exact match (handles duplicates correctly)
+  let globalIdx = STATE.reports.indexOf(report);
+  // Fallback: field matching if reference not found
+  if (globalIdx < 0) {
+    const rid = report.reportId;
+    const ts = report.timestamp;
+    globalIdx = STATE.reports.findIndex(r =>
+      (rid && r.reportId === rid) || (ts && r.timestamp === ts) ||
+      (r.date === report.date && r.site === report.site && r.shift === report.shift && r.engineer === report.engineer && JSON.stringify(r.zones||[]) === JSON.stringify(report.zones||[]))
+    );
+  }
   if (globalIdx >= 0) {
     STATE.reports.splice(globalIdx, 1);
     saveReportsCache();
