@@ -1214,7 +1214,7 @@ async function pullFromSheet() {
         const photos = photoUrls.map((url, i) => ({ name: 'Photo ' + (i + 1), dataUrl: url }));
 
         return normalizeReportForUI({
-          date: r.date || '',
+          date: toYMD(r.date || ''),
           site: r.site || '',
           shift: r.shift || '',
           weather: r.weather || '',
@@ -1270,6 +1270,33 @@ function setSubmitButtonEditing(isEditing) {
   const btn = document.getElementById('submitBtn');
   if (!btn) return;
   btn.textContent = isEditing ? '💾 Update Daily Report' : '✅ Submit Daily Report';
+}
+
+function toYMD(dateVal) {
+  if (!dateVal) return '';
+
+  if (typeof dateVal === 'string') {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateVal)) return dateVal;
+
+    const d = new Date(dateVal);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    return dateVal.slice(0, 10);
+  }
+
+  if (dateVal instanceof Date && !isNaN(dateVal.getTime())) {
+    const y = dateVal.getFullYear();
+    const m = String(dateVal.getMonth() + 1).padStart(2, '0');
+    const day = String(dateVal.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  return '';
 }
 
 function normalizeReportForUI(r) {
@@ -1418,7 +1445,9 @@ async function deleteFilteredReport(idx) {
   if (!report) return;
 
   const ok = confirm(
-    'Delete report for ' + formatDate(report.date) + ' (' + report.site + ', ' + (report.shift || 'Day') + ' shift)?\n\n' +
+    'Delete report for ' + formatDate(report.date) + ' (' + report.site + ', ' + (report.shift || 'Day') + ' shift)?
+
+' +
     'This will delete from both local and Google Sheet. Cannot be undone.'
   );
   if (!ok) return;
@@ -1431,7 +1460,7 @@ async function deleteFilteredReport(idx) {
     globalIdx = STATE.reports.findIndex(r =>
       (rid && r.reportId === rid) ||
       (ts && r.timestamp === ts) ||
-      (r.date === report.date &&
+      (toYMD(r.date) === toYMD(report.date) &&
        r.site === report.site &&
        r.shift === report.shift &&
        r.engineer === report.engineer &&
@@ -1443,6 +1472,8 @@ async function deleteFilteredReport(idx) {
     toast('Report not found', 'err');
     return;
   }
+
+  const originalReport = STATE.reports[globalIdx];
 
   STATE.reports.splice(globalIdx, 1);
   saveReportsCache();
@@ -1456,10 +1487,10 @@ async function deleteFilteredReport(idx) {
   try {
     const payload = {
       action: 'delete',
-      date: report.date,
-      site: report.site,
-      shift: report.shift || '',
-      timestamp: report.timestamp || ''
+      date: toYMD(report.date),
+      site: (report.site || '').trim(),
+      shift: (report.shift || '').trim(),
+      timestamp: (report.timestamp || '').trim()
     };
 
     console.log('[deleteFilteredReport] request payload:', payload);
@@ -1476,10 +1507,10 @@ async function deleteFilteredReport(idx) {
     const dbg = delJson.debug || {};
     const matched = dbg.daily?.matchedRowsBeforeDelete?.length ?? delJson.deleted ?? 0;
     const finalDeleted = dbg.daily?.finalDeleteCount ?? delJson.deleted ?? 0;
-    const reqDate = dbg.request?.date?.value ?? report.date;
-    const reqSite = dbg.request?.site?.value ?? report.site;
-    const reqShift = dbg.request?.shift?.value ?? report.shift;
-    const reqTs = dbg.request?.timestamp?.value ?? report.timestamp ?? '';
+    const reqDate = dbg.request?.date?.value ?? payload.date;
+    const reqSite = dbg.request?.site?.value ?? payload.site;
+    const reqShift = dbg.request?.shift?.value ?? payload.shift;
+    const reqTs = dbg.request?.timestamp?.value ?? payload.timestamp;
     const first3 = (dbg.daily?.first3Rows || [])
       .map(r => `R${r.rowNumber}:${r.dateNormalized}|${r.site}|${r.shift}|${r.timestamp}`)
       .join(' ; ');
@@ -1489,12 +1520,9 @@ async function deleteFilteredReport(idx) {
         `🗑️ Sheet deleted ${finalDeleted} row(s) | matched ${matched} | req ${reqDate}/${reqSite}/${reqShift} | ts ${reqTs || '(empty)'}`,
         'ok'
       );
-
-      if (first3) {
-        console.log('[deleteFilteredReport] first3 sheet rows:', first3);
-      }
+      if (first3) console.log('[deleteFilteredReport] first3 sheet rows:', first3);
     } else {
-      STATE.reports.splice(globalIdx, 0, report);
+      STATE.reports.splice(globalIdx, 0, originalReport);
       saveReportsCache();
       renderHistory();
       renderSummary();
@@ -1504,13 +1532,17 @@ async function deleteFilteredReport(idx) {
         `❌ Delete failed | matched ${matched} | req ${reqDate}/${reqSite}/${reqShift} | ts ${reqTs || '(empty)'}`,
         'err'
       );
-
-      if (first3) {
-        console.log('[deleteFilteredReport] first3 sheet rows:', first3);
-      }
+      if (first3) console.log('[deleteFilteredReport] first3 sheet rows:', first3);
     }
   } catch (e) {
     console.error('[deleteFilteredReport] error:', e);
+
+    STATE.reports.splice(globalIdx, 0, originalReport);
+    saveReportsCache();
+    renderHistory();
+    renderSummary();
+    renderLocationSummary();
+
     toast('Deleted locally, Sheet sync failed', 'err');
   }
 }
