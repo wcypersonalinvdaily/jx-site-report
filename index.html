@@ -1202,41 +1202,54 @@ async function pushToSheet(report) {
 async function pullFromSheet() {
   if (!STATE.webAppUrl) { connStat('Connect Web App first', 'err'); return; }
   connStat('Pulling data...', 'info');
+
   try {
     const res = await fetch(STATE.webAppUrl + '?action=history');
     const json = await res.json();
+    console.log('[pullFromSheet] response:', json);
+
     if (json.success && json.reports) {
       STATE.reports = json.reports.map(r => {
-        // Convert photoUrls from Drive to photos format
         const photoUrls = Array.isArray(r.photoUrls) ? r.photoUrls : [];
-        const photos = photoUrls.map((url, i) => ({ name: 'Photo ' + (i+1), dataUrl: url }));
-        return {
-          date: r.date||'', site: r.site||'', shift: r.shift||'', weather: r.weather||'', engineer: r.engineer||'',
-          totalMP: parseInt(r.totalMP)||0,
-          rebar: parseFloat(r.rebar)||0,
-          formwork: parseFloat(r.formwork)||0,
-          concrete: parseFloat(r.concrete)||0,
-          zones: r.zones||[],
-          summary: r.summary||'',
-          issues: r.issues||'',
-          plan: r.plan||'',
-          safety: r.safety||'Normal',
-          safetyDetail: r.safetyDetail||'',
+        const photos = photoUrls.map((url, i) => ({ name: 'Photo ' + (i + 1), dataUrl: url }));
+
+        return normalizeReportForUI({
+          date: r.date || '',
+          site: r.site || '',
+          shift: r.shift || '',
+          weather: r.weather || '',
+          engineer: r.engineer || '',
+          totalMP: parseInt(r.totalMP) || 0,
+          rebar: parseFloat(r.rebar) || 0,
+          formwork: parseFloat(r.formwork) || 0,
+          concrete: parseFloat(r.concrete) || 0,
+          scaffold: parseFloat(r.scaffold) || 0,
+          zones: Array.isArray(r.zones) ? r.zones : [],
+          summary: r.summary || '',
+          issues: r.issues || '',
+          plan: r.plan || '',
+          safety: r.safety || 'Normal',
+          safetyDetail: r.safetyDetail || '',
           photos: photos,
-          photoCount: photos.length || parseInt(r.photoCount)||0,
-          timestamp: r.timestamp||'',
-          reportId: r.reportId||''
-        };
+          photoCount: photos.length || parseInt(r.photoCount) || 0,
+          timestamp: r.timestamp || '',
+          reportId: r.reportId || ''
+        });
       });
+
       localStorage.setItem('jx_reports', JSON.stringify(STATE.reports));
       renderHistory();
       renderSummary();
       renderLocationSummary();
       connStat('✓ ' + STATE.reports.length + ' records loaded from Sheet', 'ok');
     } else {
-      connStat('✗ ' + (json.error || 'No data'), 'err');
+      connStat('Pull failed', 'err');
+      console.error('[pullFromSheet] invalid payload:', json);
     }
-  } catch(e) { connStat('✗ ' + e.message, 'err'); }
+  } catch (e) {
+    connStat('Pull failed', 'err');
+    console.error('[pullFromSheet] error:', e);
+  }
 }
 
 // ═══════════════════════════════════════
@@ -1403,57 +1416,102 @@ function editFilteredReport(idx) {
 async function deleteFilteredReport(idx) {
   const report = filteredReportsCache[idx];
   if (!report) return;
-  const ok = confirm('Delete report for ' + formatDate(report.date) + ' (' + report.site + ', ' + (report.shift||'Day') + ' shift)?\n\nThis will delete from both local and Google Sheet. Cannot be undone.');
+
+  const ok = confirm(
+    'Delete report for ' + formatDate(report.date) + ' (' + report.site + ', ' + (report.shift || 'Day') + ' shift)?\n\n' +
+    'This will delete from both local and Google Sheet. Cannot be undone.'
+  );
   if (!ok) return;
-  // Use object reference to find exact match (handles duplicates correctly)
+
   let globalIdx = STATE.reports.indexOf(report);
-  // Fallback: field matching if reference not found
+
   if (globalIdx < 0) {
     const rid = report.reportId;
     const ts = report.timestamp;
     globalIdx = STATE.reports.findIndex(r =>
-      (rid && r.reportId === rid) || (ts && r.timestamp === ts) ||
-      (r.date === report.date && r.site === report.site && r.shift === report.shift && r.engineer === report.engineer && JSON.stringify(r.zones||[]) === JSON.stringify(report.zones||[]))
+      (rid && r.reportId === rid) ||
+      (ts && r.timestamp === ts) ||
+      (r.date === report.date &&
+       r.site === report.site &&
+       r.shift === report.shift &&
+       r.engineer === report.engineer &&
+       JSON.stringify(r.zones || []) === JSON.stringify(report.zones || []))
     );
   }
-  if (globalIdx >= 0) {
-    STATE.reports.splice(globalIdx, 1);
-    saveReportsCache();
-    renderHistory();
-    renderSummary();
-    renderLocationSummary();
-    toast('🗑️ Deleting from Sheet...', 'ok');
-    
-    // Also delete from Google Sheet
-    if (STATE.webAppUrl) {
-      try {
-        const delRes = await fetch(STATE.webAppUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({
-            action: 'delete',
-            date: report.date,
-            site: report.site,
-            shift: report.shift,
-            timestamp: report.timestamp || ''
-          })
-        });
-        const delJson = await delRes.json();
-        if (delJson.success) {
-          toast('🗑️ Deleted from Sheet', 'ok');
-        } else {
-          // Sheet删除失败，回滚本地
-          STATE.reports.splice(globalIdx, 0, report);
-          saveReportsCache();
-          renderHistory();
-          toast('❌ Sheet delete failed: ' + (delJson.error||'unknown'), 'err');
-        }
-      } catch(e) {
-        toast('Deleted locally, Sheet sync failed', 'err');
+
+  if (globalIdx < 0) {
+    toast('Report not found', 'err');
+    return;
+  }
+
+  STATE.reports.splice(globalIdx, 1);
+  saveReportsCache();
+  renderHistory();
+  renderSummary();
+  renderLocationSummary();
+  toast('🗑️ Deleting from Sheet...', 'ok');
+
+  if (!STATE.webAppUrl) return;
+
+  try {
+    const payload = {
+      action: 'delete',
+      date: report.date,
+      site: report.site,
+      shift: report.shift || '',
+      timestamp: report.timestamp || ''
+    };
+
+    console.log('[deleteFilteredReport] request payload:', payload);
+
+    const delRes = await fetch(STATE.webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
+    });
+
+    const delJson = await delRes.json();
+    console.log('[deleteFilteredReport] response:', delJson);
+
+    const dbg = delJson.debug || {};
+    const matched = dbg.daily?.matchedRowsBeforeDelete?.length ?? delJson.deleted ?? 0;
+    const finalDeleted = dbg.daily?.finalDeleteCount ?? delJson.deleted ?? 0;
+    const reqDate = dbg.request?.date?.value ?? report.date;
+    const reqSite = dbg.request?.site?.value ?? report.site;
+    const reqShift = dbg.request?.shift?.value ?? report.shift;
+    const reqTs = dbg.request?.timestamp?.value ?? report.timestamp ?? '';
+    const first3 = (dbg.daily?.first3Rows || [])
+      .map(r => `R${r.rowNumber}:${r.dateNormalized}|${r.site}|${r.shift}|${r.timestamp}`)
+      .join(' ; ');
+
+    if (delJson.success) {
+      toast(
+        `🗑️ Sheet deleted ${finalDeleted} row(s) | matched ${matched} | req ${reqDate}/${reqSite}/${reqShift} | ts ${reqTs || '(empty)'}`,
+        'ok'
+      );
+
+      if (first3) {
+        console.log('[deleteFilteredReport] first3 sheet rows:', first3);
+      }
+    } else {
+      STATE.reports.splice(globalIdx, 0, report);
+      saveReportsCache();
+      renderHistory();
+      renderSummary();
+      renderLocationSummary();
+
+      toast(
+        `❌ Delete failed | matched ${matched} | req ${reqDate}/${reqSite}/${reqShift} | ts ${reqTs || '(empty)'}`,
+        'err'
+      );
+
+      if (first3) {
+        console.log('[deleteFilteredReport] first3 sheet rows:', first3);
       }
     }
-  } else {
-    toast('Report not found', 'err');
+  } catch (e) {
+    console.error('[deleteFilteredReport] error:', e);
+    toast('Deleted locally, Sheet sync failed', 'err');
   }
 }
 
