@@ -2004,7 +2004,10 @@ function switchTab(name) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  event.target.classList.add('active');
+  // Activate the matching tab button by name rather than relying on global event object
+  const tabBtn = document.querySelector('.tab-btn[onclick="switchTab(\'' + name + '\')"]');
+  if (tabBtn) tabBtn.classList.add('active');
+  if (name === 'history') renderHistory();
   if (name === 'summary') { renderSummary(); renderLocationSummary(); }
 }
 
