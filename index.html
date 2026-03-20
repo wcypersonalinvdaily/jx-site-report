@@ -1214,7 +1214,7 @@ async function pullFromSheet() {
     console.log('[pullFromSheet] response:', json);
 
     if (json.success && json.reports) {
-      STATE.reports = json.reports.map(r => {
+      const sheetReports = json.reports.map(r => {
         const photoUrls = Array.isArray(r.photoUrls) ? r.photoUrls : [];
         const photos = photoUrls.map((url, i) => ({ name: 'Photo ' + (i + 1), dataUrl: url }));
 
@@ -1241,6 +1241,24 @@ async function pullFromSheet() {
           reportId: r.reportId || ''
         });
       });
+
+      // ── Merge: keep locally-deleted records out ──────────────────────────
+      // Build a key set of what currently exists locally
+      function reportKey(r) {
+        const ts = (r.timestamp || '').replace('Z','').replace('.000','').substring(0,19);
+        if (ts) return 'ts:' + ts;
+        return 'dss:' + toYMD(r.date) + '|' + (r.site||'') + '|' + (r.shift||'');
+      }
+      const localKeys = new Set(STATE.reports.map(reportKey));
+      // Any key NOT in local = was deleted locally; exclude from sheet results
+      const merged = sheetReports.filter(r => localKeys.has(reportKey(r)));
+      // Also add any local-only records (submitted but not yet in sheet, e.g. offline)
+      const sheetKeys = new Set(sheetReports.map(reportKey));
+      STATE.reports.forEach(r => { if (!sheetKeys.has(reportKey(r))) merged.push(r); });
+      // Sort by date desc
+      merged.sort((a, b) => (toYMD(b.date) || '').localeCompare(toYMD(a.date) || ''));
+      STATE.reports = merged;
+      // ─────────────────────────────────────────────────────────────────────
 
       localStorage.setItem('jx_reports', JSON.stringify(STATE.reports));
       renderHistory();
