@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>JX Construction · Site Daily Report</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
@@ -385,6 +387,9 @@ body { background:var(--bg); font-family:'Inter',system-ui,-apple-system,sans-se
     <div style="max-width:700px;margin:20px auto;background:var(--surface);border-radius:12px;padding:24px;box-shadow:var(--shadow-lg);position:relative;">
       <button onclick="document.getElementById('previewModal').style.display='none'" style="position:absolute;top:12px;right:16px;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--ink3);">✕</button>
       <div id="previewContent"></div>
+      <div style="margin-top:16px;text-align:right;">
+        <button onclick="exportToPDF()" class="btn btn-primary" style="padding:8px 20px;font-size:0.85rem;">⬇ Export PDF</button>
+      </div>
     </div>
   </div>
 
@@ -1770,6 +1775,67 @@ function showReportPreview(r) {
   `;
 
   modal.style.display = 'block';
+}
+
+// ═══════════════════════════════════════
+// PDF EXPORT — multi-page A4 support
+// ═══════════════════════════════════════
+async function exportToPDF() {
+  const el = document.getElementById('previewContent');
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating...';
+
+  try {
+    const canvas = await html2canvas(el, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#ffffff'
+    });
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+
+    const pageW = pdf.internal.pageSize.getWidth();   // 210mm
+    const pageH = pdf.internal.pageSize.getHeight();  // 297mm
+    const margin = 10; // mm padding top/bottom
+
+    const imgData = canvas.toDataURL('image/png');
+    const imgW = pageW - margin * 2;
+    const imgH = (canvas.height * imgW) / canvas.width; // total rendered height in mm
+
+    const usableH = pageH - margin * 2; // usable height per page
+    let posY = 0; // current Y offset within the image (mm)
+    let page = 0;
+
+    while (posY < imgH) {
+      if (page > 0) pdf.addPage();
+
+      // srcY/srcH in canvas pixels corresponding to this page's mm slice
+      const sliceH = Math.min(usableH, imgH - posY);
+      const srcY = (posY / imgH) * canvas.height;
+      const srcH = (sliceH / imgH) * canvas.height;
+
+      // Create a temp canvas for this slice
+      const slice = document.createElement('canvas');
+      slice.width = canvas.width;
+      slice.height = Math.ceil(srcH);
+      const ctx = slice.getContext('2d');
+      ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
+
+      pdf.addImage(slice.toDataURL('image/png'), 'PNG', margin, margin, imgW, sliceH);
+
+      posY += usableH;
+      page++;
+    }
+
+    // Filename: SiteReport_YYYY-MM-DD.pdf
+    const dateStr = new Date().toISOString().slice(0, 10);
+    pdf.save(`SiteReport_${dateStr}.pdf`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⬇ Export PDF';
+  }
 }
 
 // ═══════════════════════════════════════
