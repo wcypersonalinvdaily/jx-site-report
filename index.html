@@ -453,7 +453,7 @@ const ROLES = [
 // STATE
 // ═══════════════════════════════════════
 let STATE = {
-  webAppUrl: 'https://script.google.com/macros/s/AKfycbx8LeyT43ws-qRpddhlvTYTJGtO1vW7KHr_ysqfy-ABl-sMgraGn6Cd7OXf0qoH2feycw/exec',
+  webAppUrl: 'https://script.google.com/macros/s/AKfycbzlLwj4dqQr8Og4TSEjisPeRTxeg43McPpvMbPVH3_ilc8f-BXhXG1CNkDpJ0-f9cgWzA/exec',
   reports: [],
   photos: [],
   editingReportId: null,
@@ -547,7 +547,9 @@ function deleteSite(idx) {
   document.getElementById('webAppUrl').value = STATE.webAppUrl;
   try {
     const saved = JSON.parse(localStorage.getItem('jx_conn') || '{}');
-    if (saved.webAppUrl) STATE.webAppUrl = saved.webAppUrl;
+    // Only use saved URL if it's not the old deprecated URL
+    const DEPRECATED_URL = 'AKfycbx8LeyT43ws-qRpddhlvTYTJGtO1vW7KHr_ysqfy-ABl-sMgraGn6Cd7OXf0qoH2feycw';
+    if (saved.webAppUrl && !saved.webAppUrl.includes(DEPRECATED_URL)) STATE.webAppUrl = saved.webAppUrl;
     const savedName = localStorage.getItem('jx_engineer');
     if (savedName) document.getElementById('rptEngineer').value = savedName;
   } catch(e) {}
