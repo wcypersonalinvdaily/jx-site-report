@@ -1245,18 +1245,25 @@ async function pullFromSheet() {
       });
 
       // ── Merge: keep locally-deleted records out ──────────────────────────
-      // Build a key set of what currently exists locally
       function reportKey(r) {
         const ts = (r.timestamp || '').replace('Z','').replace('.000','').substring(0,19);
         if (ts) return 'ts:' + ts;
         return 'dss:' + toYMD(r.date) + '|' + (r.site||'') + '|' + (r.shift||'');
       }
-      const localKeys = new Set(STATE.reports.map(reportKey));
-      // Any key NOT in local = was deleted locally; exclude from sheet results
-      const merged = sheetReports.filter(r => localKeys.has(reportKey(r)));
-      // Also add any local-only records (submitted but not yet in sheet, e.g. offline)
-      const sheetKeys = new Set(sheetReports.map(reportKey));
-      STATE.reports.forEach(r => { if (!sheetKeys.has(reportKey(r))) merged.push(r); });
+
+      let merged;
+      if (STATE.reports.length === 0) {
+        // Local is empty (new device / cleared cache) — just take everything from Sheet
+        merged = sheetReports;
+      } else {
+        // Local has data — only exclude records that were explicitly deleted locally
+        const localKeys = new Set(STATE.reports.map(reportKey));
+        const sheetKeys = new Set(sheetReports.map(reportKey));
+        // Sheet records that still exist locally (not deleted)
+        merged = sheetReports.filter(r => localKeys.has(reportKey(r)));
+        // Add local-only records (offline submissions not yet in Sheet)
+        STATE.reports.forEach(r => { if (!sheetKeys.has(reportKey(r))) merged.push(r); });
+      }
       // Sort by date desc
       merged.sort((a, b) => (toYMD(b.date) || '').localeCompare(toYMD(a.date) || ''));
       STATE.reports = merged;
