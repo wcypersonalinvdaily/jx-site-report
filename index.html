@@ -1470,10 +1470,7 @@ async function deleteFilteredReport(idx) {
   if (!report) return;
 
   const ok = confirm(
-    'Delete report for ' + formatDate(report.date) + ' (' + report.site + ', ' + (report.shift || 'Day') + ' shift)?
-
-' +
-    'This will delete from both local and Google Sheet. Cannot be undone.'
+    'Delete report for ' + formatDate(report.date) + ' (' + report.site + ', ' + (report.shift || 'Day') + ' shift)?\n\nThis will delete from both local and Google Sheet. Cannot be undone.'
   );
   if (!ok) return;
 
