@@ -1915,8 +1915,11 @@ function renderHistory() {
   }
 
   filtered.sort((a,b) => {
-    const da = new Date(a.date||0), db = new Date(b.date||0);
-    return db - da;
+    const da = toYMD(a.date)||'', db = toYMD(b.date)||'';
+    if (db !== da) return db.localeCompare(da);
+    // Same date: Day before Night
+    const shiftOrder = s => (s||'').toLowerCase().includes('night') ? 1 : 0;
+    return shiftOrder(a.shift) - shiftOrder(b.shift);
   });
 
   filteredReportsCache = filtered;
@@ -1927,7 +1930,30 @@ function renderHistory() {
     return;
   }
 
-  el.innerHTML = filtered.map((r, idx) => {
+  // Group by date
+  const groups = {};
+  filtered.forEach((r, idx) => {
+    const key = toYMD(r.date) || 'Unknown';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({ r, idx });
+  });
+
+  el.innerHTML = Object.keys(groups).sort((a,b) => b.localeCompare(a)).map(dateKey => {
+    const dayLabel = formatDate(dateKey);
+    const rows = groups[dateKey];
+    const hasDay   = rows.some(({r}) => !(r.shift||'').toLowerCase().includes('night'));
+    const hasNight = rows.some(({r}) =>  (r.shift||'').toLowerCase().includes('night'));
+    const shiftBadge = hasDay && hasNight ? '☀️🌙 Day + Night'
+                     : hasDay   ? '☀️ Day Shift'
+                     : hasNight ? '🌙 Night Shift' : '';
+
+    return `<div style="margin-bottom:20px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:6px 12px;background:var(--surface2);border-radius:8px;border-left:3px solid var(--accent);">
+        <span style="font-weight:700;font-size:0.88rem;color:var(--ink);">${dayLabel}</span>
+        <span style="font-size:0.72rem;color:var(--accent);font-weight:600;">${shiftBadge}</span>
+        <span style="font-size:0.72rem;color:var(--ink3);margin-left:auto;">${rows.length} report${rows.length>1?'s':''}</span>
+      </div>
+      ${rows.map(({r, idx}) => {
     const dateStr = formatDate(r.date);
     const safetyColor = r.safety==='Normal'?'var(--green)':r.safety==='Near Miss'?'var(--amber)':'var(--red)';
     const photoCount = r.photoCount || (r.photos||[]).length || 0;
@@ -1935,9 +1961,9 @@ function renderHistory() {
     return `<div class="history-card">
       <div class="history-card-head">
         <div onclick="viewFilteredReport(${idx})" class="history-main" style="cursor:pointer;">
-          <span style="font-weight:800;font-size:0.95rem;min-width:95px;">${dateStr}</span>
+          <span style="font-size:0.82rem;padding:3px 10px;border-radius:999px;font-weight:700;${(r.shift||'').toLowerCase().includes('night')?'background:rgba(167,139,250,0.15);color:var(--purple)':'background:rgba(251,191,36,0.15);color:var(--amber)'}">${(r.shift||'').toLowerCase().includes('night')?'🌙 Night':'☀️ Day'}</span>
           <span style="font-size:0.82rem;padding:4px 12px;border-radius:999px;background:var(--accent-bg);color:var(--accent);font-weight:700;">${r.site||''}</span>
-          <span style="font-size:0.82rem;color:var(--ink3);font-weight:500;">${r.shift||'Day'} · ${r.weather||''}</span>
+          <span style="font-size:0.82rem;color:var(--ink3);font-weight:500;">${r.weather||''}</span>
           <span style="font-weight:700;font-size:0.9rem;">${r.totalMP||0} pax</span>
           <span style="font-size:0.82rem;color:var(--red);font-weight:600;">Rebar: ${(r.rebar||0).toFixed(1)}T</span>
           <span style="font-size:0.82rem;color:var(--purple);font-weight:600;">Formwork: ${(r.formwork||0).toFixed(1)}m²</span>
@@ -1952,6 +1978,8 @@ function renderHistory() {
         </div>
       </div>
       ${(r.photos||[]).length ? `<div style="display:flex;gap:8px;padding:10px 16px;background:var(--surface2);border-top:1px solid var(--border);">${r.photos.slice(0,4).map(p => `<img src="${p.dataUrl || p}" style="width:54px;height:54px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">`).join('')}</div>` : ''}
+    </div>`;
+      }).join('')}
     </div>`;
   }).join('');
 }
