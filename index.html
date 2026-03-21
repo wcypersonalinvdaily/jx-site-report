@@ -1958,8 +1958,9 @@ function renderHistory() {
     const safetyColor = r.safety==='Normal'?'var(--green)':r.safety==='Near Miss'?'var(--amber)':'var(--red)';
     const photoCount = r.photoCount || (r.photos||[]).length || 0;
 
-    return `<div class="history-card">
-      <div class="history-card-head">
+    const isNight = (r.shift||'').toLowerCase().includes('night');
+    return `<div class="history-card" style="${isNight ? 'background:rgba(167,139,250,0.07);border-color:rgba(167,139,250,0.25);' : 'background:rgba(251,191,36,0.06);border-color:rgba(251,191,36,0.2);'}">
+      <div class="history-card-head" style="${isNight ? 'background:rgba(167,139,250,0.08);' : 'background:rgba(251,191,36,0.08);'}">`
         <div onclick="viewFilteredReport(${idx})" class="history-main" style="cursor:pointer;">
           <span style="font-size:0.82rem;padding:3px 10px;border-radius:999px;font-weight:700;${(r.shift||'').toLowerCase().includes('night')?'background:rgba(167,139,250,0.15);color:var(--purple)':'background:rgba(251,191,36,0.15);color:var(--amber)'}">${(r.shift||'').toLowerCase().includes('night')?'🌙 Night':'☀️ Day'}</span>
           <span style="font-size:0.82rem;padding:4px 12px;border-radius:999px;background:var(--accent-bg);color:var(--accent);font-weight:700;">${r.site||''}</span>
