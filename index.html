@@ -1244,31 +1244,13 @@ async function pullFromSheet() {
         });
       });
 
-      // ── Merge: keep locally-deleted records out ──────────────────────────
-      function reportKey(r) {
-        const ts = (r.timestamp || '').replace('Z','').replace('.000','').substring(0,19);
-        if (ts) return 'ts:' + ts;
-        return 'dss:' + toYMD(r.date) + '|' + (r.site||'') + '|' + (r.shift||'');
-      }
-
-      let merged;
-      if (STATE.reports.length === 0) {
-        // Local is empty (new device / cleared cache) — just take everything from Sheet
-        merged = sheetReports;
-      } else {
-        // Local has data — only exclude records that were explicitly deleted locally
-        const localKeys = new Set(STATE.reports.map(reportKey));
-        const sheetKeys = new Set(sheetReports.map(reportKey));
-        // Sheet records that still exist locally (not deleted)
-        merged = sheetReports.filter(r => localKeys.has(reportKey(r)));
-        // Add local-only records (offline submissions not yet in Sheet)
-        STATE.reports.forEach(r => { if (!sheetKeys.has(reportKey(r))) merged.push(r); });
-      }
-      // Sort by date desc
-      merged.sort((a, b) => (toYMD(b.date) || '').localeCompare(toYMD(a.date) || ''));
-      STATE.reports = merged;
-      // ─────────────────────────────────────────────────────────────────────
-
+      sheetReports.sort((a, b) => {
+        const da = toYMD(a.date) || '';
+        const db = toYMD(b.date) || '';
+        if (db !== da) return db.localeCompare(da);
+        return String(b.timestamp || '').localeCompare(String(a.timestamp || ''));
+      });
+      STATE.reports = sheetReports;
       localStorage.setItem('jx_reports', JSON.stringify(STATE.reports));
       renderHistory();
       renderSummary();
