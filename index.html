@@ -535,7 +535,7 @@ function deleteSite(idx) {
 (function init() {
   const today = new Date().toISOString().slice(0,10);
   document.getElementById('rptDate').value = today;
-  document.getElementById('histMonth').value = today.slice(0,7);
+  document.getElementById('histMonth').value = '';
   document.getElementById('sumMonth').value = today.slice(0,7);
   document.getElementById('dateDisplay').textContent = new Date().toLocaleDateString('en-SG', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
 
