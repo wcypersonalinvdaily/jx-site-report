@@ -375,7 +375,7 @@ body { background:var(--bg); font-family:'Inter',system-ui,-apple-system,sans-se
         </div>
         <div class="form-group">
           <label>Filter Month</label>
-          <input type="month" id="histMonth" onchange="renderHistory()">
+          <select id="histMonth" onchange="renderHistory()"><option value="">All Months</option></select>
         </div>
       </div>
       <div id="histList"></div>
@@ -498,6 +498,16 @@ function refreshAllSiteDropdowns() {
   renderSiteTags();
 }
 
+function populateHistoryMonthOptions() {
+  const sel = document.getElementById('histMonth');
+  if (!sel) return;
+  const current = sel.value || '';
+  const months = [...new Set((STATE.reports || []).map(r => getISODate(r.date || '')).filter(Boolean).map(d => d.slice(0,7)))].sort().reverse();
+  sel.innerHTML = '<option value="">All Months</option>' + months.map(m => `<option value="${m}">${m}</option>`).join('');
+  sel.value = months.includes(current) ? current : '';
+}
+
+
 function renderSiteTags() {
   const el = document.getElementById('siteTags');
   if (!el) return;
@@ -541,6 +551,7 @@ function deleteSite(idx) {
 
   // Populate site dropdowns
   refreshAllSiteDropdowns();
+  populateHistoryMonthOptions();
 
   // Build manpower grid
   buildMpGrid();
@@ -1332,6 +1343,7 @@ function normalizeReportForUI(r) {
 
 function saveReportsCache() {
   localStorage.setItem('jx_reports', JSON.stringify(STATE.reports));
+  populateHistoryMonthOptions();
   renderHistory();
   renderSummary();
   renderLocationSummary();
