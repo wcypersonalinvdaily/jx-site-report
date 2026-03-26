@@ -457,8 +457,7 @@ let STATE = {
   reports: [],
   photos: [],
   editingReportId: null,
-  editingTimestamp: null,
-  monthlySummary: null
+  editingTimestamp: null
 };
 
 let zoneCount = 0;
@@ -498,16 +497,6 @@ function refreshAllSiteDropdowns() {
   renderSiteTags();
 }
 
-function populateHistoryMonthOptions() {
-  const sel = document.getElementById('histMonth');
-  if (!sel) return;
-  const current = sel.value || '';
-  const months = [...new Set((STATE.reports || []).map(r => getISODate(r.date || '')).filter(Boolean).map(d => d.slice(0,7)))].sort().reverse();
-  sel.innerHTML = '<option value="">All Months</option>' + months.map(m => `<option value="${m}">${m}</option>`).join('');
-  sel.value = months.includes(current) ? current : '';
-}
-
-
 function renderSiteTags() {
   const el = document.getElementById('siteTags');
   if (!el) return;
@@ -545,13 +534,12 @@ function deleteSite(idx) {
 (function init() {
   const today = new Date().toISOString().slice(0,10);
   document.getElementById('rptDate').value = today;
-  document.getElementById('histMonth').value = '';
+  document.getElementById('histMonth').value = today.slice(0,7);
   document.getElementById('sumMonth').value = today.slice(0,7);
   document.getElementById('dateDisplay').textContent = new Date().toLocaleDateString('en-SG', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
 
   // Populate site dropdowns
   refreshAllSiteDropdowns();
-  populateHistoryMonthOptions();
 
   // Build manpower grid
   buildMpGrid();
@@ -566,14 +554,15 @@ function deleteSite(idx) {
     if (savedName) document.getElementById('rptEngineer').value = savedName;
   } catch(e) {}
   connStat('✓ Auto-connected to Sheet', 'ok');
-  // Load local cache only as temporary fallback, Sheet remains source of truth
+  // Load local reports first, then auto-pull from Sheet
   try { STATE.reports = JSON.parse(localStorage.getItem('jx_reports') || '[]'); } catch(e) { STATE.reports = []; }
   renderHistory();
   renderSummary();
   renderLocationSummary();
 
+  // Auto pull from Sheet after 1 second
   if (STATE.webAppUrl) {
-    setTimeout(() => { pullFromSheet(); }, 300);
+    setTimeout(() => { pullFromSheet(); }, 1000);
   }
 
   // Enter key for site input
@@ -1255,13 +1244,31 @@ async function pullFromSheet() {
         });
       });
 
-      sheetReports.sort((a, b) => {
-        const da = toYMD(a.date) || '';
-        const db = toYMD(b.date) || '';
-        if (db !== da) return db.localeCompare(da);
-        return String(b.timestamp || '').localeCompare(String(a.timestamp || ''));
-      });
-      STATE.reports = sheetReports;
+      // ── Merge: keep locally-deleted records out ──────────────────────────
+      function reportKey(r) {
+        const ts = (r.timestamp || '').replace('Z','').replace('.000','').substring(0,19);
+        if (ts) return 'ts:' + ts;
+        return 'dss:' + toYMD(r.date) + '|' + (r.site||'') + '|' + (r.shift||'');
+      }
+
+      let merged;
+      if (STATE.reports.length === 0) {
+        // Local is empty (new device / cleared cache) — just take everything from Sheet
+        merged = sheetReports;
+      } else {
+        // Local has data — only exclude records that were explicitly deleted locally
+        const localKeys = new Set(STATE.reports.map(reportKey));
+        const sheetKeys = new Set(sheetReports.map(reportKey));
+        // Sheet records that still exist locally (not deleted)
+        merged = sheetReports.filter(r => localKeys.has(reportKey(r)));
+        // Add local-only records (offline submissions not yet in Sheet)
+        STATE.reports.forEach(r => { if (!sheetKeys.has(reportKey(r))) merged.push(r); });
+      }
+      // Sort by date desc
+      merged.sort((a, b) => (toYMD(b.date) || '').localeCompare(toYMD(a.date) || ''));
+      STATE.reports = merged;
+      // ─────────────────────────────────────────────────────────────────────
+
       localStorage.setItem('jx_reports', JSON.stringify(STATE.reports));
       renderHistory();
       renderSummary();
@@ -1343,7 +1350,6 @@ function normalizeReportForUI(r) {
 
 function saveReportsCache() {
   localStorage.setItem('jx_reports', JSON.stringify(STATE.reports));
-  populateHistoryMonthOptions();
   renderHistory();
   renderSummary();
   renderLocationSummary();
@@ -2002,13 +2008,12 @@ function renderSummary() {
   if (site !== 'All') filtered = filtered.filter(r => r.site === site);
   const monthData = month ? filtered.filter(r => r.date && r.date.startsWith(month)) : filtered;
 
-  const monthly = STATE.monthlySummary && STATE.monthlySummary.Month === month && STATE.monthlySummary.Site === site ? STATE.monthlySummary : null;
-  const mRebar = monthly ? Number(monthly.Rebar_T || 0) : monthData.reduce((s,r) => s+(r.rebar||0), 0);
-  const mFW = monthly ? Number(monthly.Formwork_m2 || 0) : monthData.reduce((s,r) => s+(r.formwork||0), 0);
-  const mConc = monthly ? Number(monthly.Concrete_m3 || 0) : monthData.reduce((s,r) => s+(r.concrete||0), 0);
-  const mMP = monthly ? Number(monthly.Total_Mandays || 0) : monthData.reduce((s,r) => s+(r.totalMP||0), 0);
-  const days = monthly ? Number(monthly.Report_Days || 0) : monthData.length;
-  const incidents = monthly ? Number(monthly.Safety_Incidents || 0) : monthData.filter(r => r.safety && r.safety !== 'Normal').length;
+  const mRebar = monthData.reduce((s,r) => s+(r.rebar||0), 0);
+  const mFW = monthData.reduce((s,r) => s+(r.formwork||0), 0);
+  const mConc = monthData.reduce((s,r) => s+(r.concrete||0), 0);
+  const mMP = monthData.reduce((s,r) => s+(r.totalMP||0), 0);
+  const days = monthData.length;
+  const incidents = monthData.filter(r => r.safety && r.safety !== 'Normal').length;
 
   document.getElementById('summaryStats').innerHTML = `
     <div class="stat-box"><div class="stat-val" style="color:var(--accent)">${days}</div><div class="stat-lbl">Report Days</div></div>
