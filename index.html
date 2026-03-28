@@ -1244,7 +1244,20 @@ async function pullFromSheet() {
         });
       });
 
-      STATE.reports = sheetReports;
+      // Sheet is primary, but keep recent local submissions (< 5 min)
+      const now = Date.now();
+      const FIVE_MIN = 5 * 60 * 1000;
+      function reportKey(r) {
+        const d = toYMD(r.date) || '';
+        return d + '|' + (r.site || '') + '|' + (r.shift || '');
+      }
+      const sheetKeys = new Set(sheetReports.map(reportKey));
+      const recentLocal = STATE.reports.filter(r => {
+        if (!r.timestamp) return false;
+        const age = now - new Date(r.timestamp).getTime();
+        return age < FIVE_MIN && !sheetKeys.has(reportKey(r));
+      });
+      STATE.reports = [...sheetReports, ...recentLocal];
       STATE.reports.sort((a, b) => (toYMD(b.date) || '').localeCompare(toYMD(a.date) || ''));
 
       localStorage.setItem('jx_reports', JSON.stringify(STATE.reports));
